@@ -235,8 +235,8 @@ void ejecutaCaso(int caso) {
     case 4:
       // 30 - 32
       ejecutaModo();
-      Serial.println(F("Caso 4: 20min"));
-      delay(1200000);
+      Serial.println(F("Caso 4: 15min"));
+      delay(900000);
       break;
     case 5:
       // 32 - 34
@@ -247,32 +247,32 @@ void ejecutaCaso(int caso) {
     case 6:
       // 34 - 36
       ejecutaModo();
-      Serial.println(F("Caso 6: 12min"));
-      delay(720000);
+      Serial.println(F("Caso 6: 10min"));
+      delay(600000);
       break;
     case 7:
       // 36 - 38
       ejecutaModo();
-      Serial.println(F("Caso 7: 9min"));
-      delay(540000);
+      Serial.println(F("Caso 7: 7min"));
+      delay(420000);
       break;
     case 8:
       // 38 - 40
       ejecutaModo();
-      Serial.println(F("Caso 8: 8min"));
-      delay(480000);
+      Serial.println(F("Caso 8: 4min"));
+      delay(240000);
       break;
     case 9:
       // 40 - 42
       ejecutaModo();
-      Serial.println(F("Caso 9: 7min"));
-      delay(420000);
+      Serial.println(F("Caso 9: 3min"));
+      delay(180000);
       break;
     case 10:
       // 42 - inf
       ejecutaModo();
-      Serial.println(F("Caso 10: 5min"));
-      delay(300000);
+      Serial.println(F("Caso 10: 2min"));
+      delay(120000);
       break;
     case 11:
       // %hum rel alta y calor
@@ -289,14 +289,14 @@ void ejecutaCaso(int caso) {
     case 13:
       // 36 - 38 (no luz)
       ejecutaModo();
-      Serial.println(F("Caso 13: Calor sin luz (36-38): 2h"));
-      delay(7200000);
+      Serial.println(F("Caso 13: Calor sin luz (36-38): 1h"));
+      delay(3600000);
       break;
     case 14:
       // 38 - inf (no luz)
       ejecutaModo();
-      Serial.println(F("Caso 14: Calor sin luz (> 38): 90min"));
-      delay(5400000);
+      Serial.println(F("Caso 14: Calor sin luz (> 38): 45min"));
+      delay(2700000);
       break;
     case 15:
       // Calor %hum alta (no luz)
@@ -341,6 +341,7 @@ void ejecutaModo() {
                 + 7 * digitalRead(l7)
                 + 8 * digitalRead(l8)
                 + 9 * digitalRead(l9);
+  msDelay *= 1000;
 
   if (msDelay > 0) {
     Serial.print(F("Tiempo activo: "));
