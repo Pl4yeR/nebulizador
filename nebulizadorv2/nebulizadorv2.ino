@@ -1,8 +1,9 @@
 /*
   NEBULIZADOR POLLUNO V2
- */
+*/
 
-#include "DHT.h"
+#include <DHT.h>
+#include <DHT_U.h>
 
 // Puertos de sensores
 #define senLum A0
@@ -85,9 +86,6 @@ void setup() {
 
   avisoReinicio();
 
-  on();
-  delay(2500);
-  off();
   ultimaEjecucion = millis();
 
   Serial.println(F("Setup end."));
@@ -116,20 +114,10 @@ float calculaFeelTemp() {
   float feelTemp = ERRORTEMP;
   if (humedad == ERRORTEMP) {
     feelTemp = ERRORTEMP;
-  } else if (humedad < HUM35) {
-    feelTemp = temperatura;
-  } else if (humedad < HUM40) {
-    feelTemp = hIndex;
   } else if (humedad < HUM50) {
-    if (temperatura <= T34) {
-      feelTemp = hIndex;
-    } else {
-      feelTemp = temperatura;
-    }
+    feelTemp = hIndex;
   } else if (humedad < HUM70) {
-    if (temperatura <= T30) {
-      feelTemp = hIndex;
-    } else if (temperatura <= T34) {
+    if (temperatura <= T32) {
       feelTemp = temperatura;
     } else if (temperatura <= T38) {
       feelTemp = temperatura - 2;
@@ -230,8 +218,8 @@ void ejecutaCaso(int caso) {
       break;
     case 1:
       // 0 - 25
-      Serial.println(F("Caso 1: Temp baja: 60min"));
-      delay(3600000);
+      Serial.println(F("Caso 1: Temp baja: 30min"));
+      delay(1800000);
       break;
     case 2:
       // 25 - 28
@@ -277,14 +265,14 @@ void ejecutaCaso(int caso) {
     case 9:
       // 40 - 42
       ejecutaModo();
-      Serial.println(F("Caso 9: 7.5min"));
-      delay(450000);
+      Serial.println(F("Caso 9: 7min"));
+      delay(420000);
       break;
     case 10:
       // 42 - inf
       ejecutaModo();
-      Serial.println(F("Caso 10: 7min"));
-      delay(420000);
+      Serial.println(F("Caso 10: 5min"));
+      delay(300000);
       break;
     case 11:
       // %hum rel alta y calor
@@ -319,8 +307,8 @@ void ejecutaCaso(int caso) {
     case 16:
       // Mucha calor %hum alta (no luz)
       ejecutaModo();
-      Serial.println(F("Caso 16: Mucha calor sin luz y humedad alta: 2.5h"));
-      delay(9000000);
+      Serial.println(F("Caso 16: Mucha calor sin luz y humedad alta: 3h"));
+      delay(10800000);
       break;
     case -1:
       Serial.println(F("Error: REVISE SENSORES: 90min"));
@@ -345,33 +333,16 @@ void ejecutaModo() {
   Serial.print(F("Ultima ejecucion (ms): "));
   Serial.println(tiempoms);
 
-  int msDelay = 0;
-  // Si hace bastante tiempo de la ultima ejecucion, encendemos durante msPlus ms adicionales para llenar la goma
-  int msPlus = 0;
-
-  if (digitalRead(l2)) {
-    msDelay = 2000;
-    msPlus = tiempoms >= GOMAVACIAMS ? 750 : 0;
-  } else if (digitalRead(l3)) {
-    msDelay = 3000;
-  } else if (digitalRead(l4)) {
-    msDelay = 4000;
-  } else if (digitalRead(l5)) {
-    msDelay = 5000;
-  } else if (digitalRead(l6)) {
-    msDelay = 6000;
-  } else if (digitalRead(l7)) {
-    msDelay = 7000;
-  } else if (digitalRead(l8)) {
-    msDelay = 8000;
-  } else if (digitalRead(l9)) {
-    msDelay = 9000;
-  } else {
-    msDelay = 0;
-  }
+  int msDelay = 2 * digitalRead(l2)
+                + 3 * digitalRead(l3)
+                + 4 * digitalRead(l4)
+                + 5 * digitalRead(l5)
+                + 6 * digitalRead(l6)
+                + 7 * digitalRead(l7)
+                + 8 * digitalRead(l8)
+                + 9 * digitalRead(l9);
 
   if (msDelay > 0) {
-    msDelay += msPlus;
     Serial.print(F("Tiempo activo: "));
     Serial.print(msDelay);
     Serial.println(F(" ms."));
