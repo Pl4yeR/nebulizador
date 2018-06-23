@@ -3,14 +3,13 @@
 */
 
 #include <DHT.h>
-#include <DHT_U.h>
 
 // Puertos de sensores
 #define senLum A0
 #define senHumTemp 11
+#define lumEnabled 2
+#define tempEnabled 3
 
-#define l2 2
-#define l3 3
 #define l4 4
 #define l5 5
 #define l6 6
@@ -37,8 +36,9 @@ DHT dht(senHumTemp, DHTTYPE);
 #define T42 42
 #define LUMDIA 650
 #define ERRORTEMP -275
+#define NOTEMP -276
 #define ERRORLUM -1
-#define GOMAVACIAMS 1200000
+#define NOLUM -2
 #define HUM35 35
 #define HUM40 40
 #define HUM50 50
@@ -66,8 +66,9 @@ void setup() {
   // Inicializamos los posibles modos
   pinMode(led, OUTPUT);
   pinMode(rele, OUTPUT);
-  pinMode(l2, INPUT);
-  pinMode(l3, INPUT);
+  pinMode(lumEnabled, INPUT);
+  pinMode(tempEnabled, INPUT);
+
   pinMode(l4, INPUT);
   pinMode(l5, INPUT);
   pinMode(l6, INPUT);
@@ -114,6 +115,8 @@ float calculaFeelTemp() {
   float feelTemp = ERRORTEMP;
   if (humedad == ERRORTEMP) {
     feelTemp = ERRORTEMP;
+  } else if (humedad == NOTEMP) {
+    feelTemp = NOTEMP;
   } else if (humedad < HUM50) {
     feelTemp = hIndex;
   } else if (humedad < HUM70) {
@@ -157,21 +160,23 @@ int calculaCaso() {
   if (luminosidad == ERRORLUM) {
     Serial.println(F("Error de sensor de luminosidad"));
     caso  = -1;
-  } else if (luminosidad < LUMDIA && feelTemp > T36 && feelTemp <= T38 && feelTemp != CALORHUMRELALTA && feelTemp != CALOR2HUMRELALTA) {
+  } else if (luminosidad != NOLUM && luminosidad < LUMDIA && feelTemp != NOTEMP && feelTemp > T36 && feelTemp <= T38 && feelTemp != CALORHUMRELALTA && feelTemp != CALOR2HUMRELALTA) {
     Serial.println(F("No hay luz, pero temperatura muy elevada (36 - 38 ºC)"));
     caso = 13;
-  } else if (luminosidad < LUMDIA && feelTemp > T38 && feelTemp != CALORHUMRELALTA && feelTemp != CALOR2HUMRELALTA) {
+  } else if (luminosidad != NOLUM && luminosidad < LUMDIA && feelTemp != NOTEMP && feelTemp > T38 && feelTemp != CALORHUMRELALTA && feelTemp != CALOR2HUMRELALTA && feelTemp != NOTEMP) {
     Serial.println(F("No hay luz, pero temperatura muy elevada (> 38 ºC)"));
     caso = 14;
-  } else if (luminosidad < LUMDIA && feelTemp == CALORHUMRELALTA) {
+  } else if (luminosidad != NOLUM && luminosidad < LUMDIA && feelTemp != NOTEMP && feelTemp == CALORHUMRELALTA) {
     Serial.println(F("No hay luz, hum relativa alta y calor"));
     caso = 15;
-  } else if (luminosidad < LUMDIA && feelTemp == CALOR2HUMRELALTA) {
+  } else if (luminosidad != NOLUM && luminosidad < LUMDIA && feelTemp != NOTEMP && feelTemp == CALOR2HUMRELALTA) {
     Serial.println(F("No hay luz, hum relativa alta y mucha calor)"));
     caso = 16;
-  } else if (luminosidad < LUMDIA) {
+  } else if (luminosidad != NOLUM && luminosidad < LUMDIA) {
     Serial.println(F("No hay luz suficiente"));
     caso = 0;
+  } else if (feelTemp == NOTEMP) {
+    caso = 17;
   } else if (feelTemp >= 0 && feelTemp <= T25) {
     caso = 1;
   } else if (feelTemp > T25 && feelTemp <= T28) {
@@ -217,98 +222,101 @@ void ejecutaCaso(int caso) {
       delay(1800000);
       break;
     case 1:
-      // 0 - 25
-      Serial.println(F("Caso 1: Temp baja: 30min"));
-      delay(1800000);
-      break;
+    // 0 - 25
     case 2:
       // 25 - 28
-      Serial.println(F("Caso 2: 30min"));
+      Serial.println(F("Caso 1-2: Temp baja (<=28): 30min"));
       delay(1800000);
       break;
     case 3:
       // 28 - 30
       ejecutaModo();
-      Serial.println(F("Caso 3: 60min"));
-      delay(3600000);
+      Serial.println(F("Caso 3: 12min"));
+      delay(720000);
       break;
     case 4:
       // 30 - 32
       ejecutaModo();
-      Serial.println(F("Caso 4: 15min"));
-      delay(900000);
+      Serial.println(F("Caso 4: 5.5min"));
+      delay(330000);
       break;
     case 5:
       // 32 - 34
       ejecutaModo();
-      Serial.println(F("Caso 5: 15min"));
-      delay(900000);
+      Serial.println(F("Caso 5: 4min"));
+      delay(240000);
       break;
     case 6:
       // 34 - 36
       ejecutaModo();
-      Serial.println(F("Caso 6: 10min"));
-      delay(600000);
+      Serial.println(F("Caso 6: 2min"));
+      delay(120000);
       break;
     case 7:
       // 36 - 38
       ejecutaModo();
-      Serial.println(F("Caso 7: 7min"));
-      delay(420000);
+      Serial.println(F("Caso 7: 1.5min"));
+      delay(90000);
       break;
     case 8:
       // 38 - 40
       ejecutaModo();
-      Serial.println(F("Caso 8: 4min"));
-      delay(240000);
+      Serial.println(F("Caso 8: 50s"));
+      delay(50000);
       break;
     case 9:
       // 40 - 42
       ejecutaModo();
-      Serial.println(F("Caso 9: 3min"));
-      delay(180000);
+      Serial.println(F("Caso 9: 30s"));
+      delay(30000);
       break;
     case 10:
       // 42 - inf
       ejecutaModo();
-      Serial.println(F("Caso 10: 2min"));
-      delay(120000);
+      Serial.println(F("Caso 10: 30s"));
+      delay(30000);
       break;
     case 11:
       // %hum rel alta y calor
       ejecutaModo();
-      Serial.println(F("Caso 11: 75min"));
-      delay(4500000);
+      Serial.println(F("Caso 11: 15min"));
+      delay(900000);
       break;
     case 12:
       // %hum rel alta y mucha calor
       ejecutaModo();
-      Serial.println(F("Caso 12: 45min"));
-      delay(2700000);
+      Serial.println(F("Caso 12: 10min"));
+      delay(600000);
       break;
     case 13:
       // 36 - 38 (no luz)
       ejecutaModo();
-      Serial.println(F("Caso 13: Calor sin luz (36-38): 1h"));
-      delay(3600000);
+      Serial.println(F("Caso 13: Calor sin luz (36-38): 45min"));
+      delay(2700000);
       break;
     case 14:
       // 38 - inf (no luz)
       ejecutaModo();
-      Serial.println(F("Caso 14: Calor sin luz (> 38): 45min"));
-      delay(2700000);
+      Serial.println(F("Caso 14: Calor sin luz (> 38): 35min"));
+      delay(2100000);
       break;
     case 15:
       // Calor %hum alta (no luz)
       ejecutaModo();
-      Serial.println(F("Caso 15: Calor sin luz y humedad alta: 3h"));
-      delay(10800000);
+      Serial.println(F("Caso 15: Calor sin luz y humedad alta: 1.5h"));
+      delay(5400000);
       break;
     case 16:
       // Mucha calor %hum alta (no luz)
       ejecutaModo();
-      Serial.println(F("Caso 16: Mucha calor sin luz y humedad alta: 3h"));
-      delay(10800000);
+      Serial.println(F("Caso 16: Mucha calor sin luz y humedad alta: 1h"));
+      delay(3600000);
+      break;
+    case 17:
+      // Sensor de temperatura/humedad desactivado. Modo temporizador.
+      ejecutaModo();
+      Serial.println(F("Caso 17: Sensor de temperatura/humedad desactivado. Modo temporizador: 4min"));
+      delay(240000);
       break;
     case -1:
       Serial.println(F("Error: REVISE SENSORES: 90min"));
@@ -333,9 +341,7 @@ void ejecutaModo() {
   Serial.print(F("Ultima ejecucion (ms): "));
   Serial.println(tiempoms);
 
-  int msDelay = 2 * digitalRead(l2)
-                + 3 * digitalRead(l3)
-                + 4 * digitalRead(l4)
+  int msDelay = 4 * digitalRead(l4)
                 + 5 * digitalRead(l5)
                 + 6 * digitalRead(l6)
                 + 7 * digitalRead(l7)
@@ -367,6 +373,11 @@ void leerValores()
 
 void leeHumTemp()
 {
+  if (digitalRead(tempEnabled) == 0) {
+    temperatura = humedad = hIndex = NOTEMP;
+    Serial.println(F("Sensor de temperatura y humedad desactivado."));
+    return;
+  }
   //Lectura de los sensores de humedad y temperatura
   humedad = dht.readHumidity();
   temperatura = dht.readTemperature();
@@ -395,6 +406,11 @@ void leeHumTemp()
 
 void leeLuminosidad()
 {
+  if (digitalRead(lumEnabled) == 0) {
+    luminosidad = NOLUM;
+    Serial.println(F("Sensor de luminosidad desactivado."));
+    return;
+  }
   // Lectura del sensor de luminosidad
   luminosidad = analogRead(senLum);
   if (luminosidad <= 1 || luminosidad > 1024) {
