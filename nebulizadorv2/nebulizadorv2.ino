@@ -249,14 +249,14 @@ void ejecutaCaso(int caso) {
     case 6:
       // 34 - 36
       ejecutaModo();
-      Serial.println(F("Caso 6: 1min"));
-      delay(60000);
+      Serial.println(F("Caso 6: 75s"));
+      delay(75000);
       break;
     case 7:
       // 36 - 38
       ejecutaModo();
-      Serial.println(F("Caso 7: 50s"));
-      delay(50000);
+      Serial.println(F("Caso 7: 60s"));
+      delay(60000);
       break;
     case 8:
       // 38 - 40
