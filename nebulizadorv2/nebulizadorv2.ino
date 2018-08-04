@@ -231,38 +231,38 @@ void ejecutaCaso(int caso) {
     case 3:
       // 28 - 30
       ejecutaModo();
-      Serial.println(F("Caso 3: 12min"));
-      delay(720000);
+      Serial.println(F("Caso 3: 10min"));
+      delay(600000);
       break;
     case 4:
       // 30 - 32
       ejecutaModo();
-      Serial.println(F("Caso 4: 5.5min"));
-      delay(330000);
+      Serial.println(F("Caso 4: 4min"));
+      delay(240000);
       break;
     case 5:
       // 32 - 34
       ejecutaModo();
-      Serial.println(F("Caso 5: 4min"));
-      delay(240000);
+      Serial.println(F("Caso 5: 3min"));
+      delay(180000);
       break;
     case 6:
       // 34 - 36
       ejecutaModo();
-      Serial.println(F("Caso 6: 2min"));
-      delay(120000);
+      Serial.println(F("Caso 6: 1min"));
+      delay(60000);
       break;
     case 7:
       // 36 - 38
       ejecutaModo();
-      Serial.println(F("Caso 7: 1.5min"));
-      delay(90000);
+      Serial.println(F("Caso 7: 50s"));
+      delay(50000);
       break;
     case 8:
       // 38 - 40
       ejecutaModo();
-      Serial.println(F("Caso 8: 50s"));
-      delay(50000);
+      Serial.println(F("Caso 8: 40s"));
+      delay(40000);
       break;
     case 9:
       // 40 - 42
