@@ -70,13 +70,14 @@ void setup() {
   pinMode(rele, OUTPUT);
   pinMode(lumEnabled, INPUT);
   pinMode(tempEnabled, INPUT);
+  pinMode(ledErrorTemp, OUTPUT);
+  pinMode(ledErrorLum, OUTPUT);
 
   pinMode(l4, INPUT);
   pinMode(l5, INPUT);
   pinMode(l6, INPUT);
   pinMode(l7, INPUT);
   pinMode(l8, INPUT);
-  pinMode(l9, INPUT);
 
   // Reseteamos todo
   off();
