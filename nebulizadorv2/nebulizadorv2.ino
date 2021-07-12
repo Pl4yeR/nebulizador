@@ -1,5 +1,5 @@
 /*
-  NEBULIZADOR POLLUNO V2
+  NEBULIZADOR POLLUNO
 */
 
 #include <DHT.h>
@@ -15,7 +15,9 @@
 #define l6 6
 #define l7 7
 #define l8 8
-#define l9 9
+
+#define ledErrorTemp 9
+#define ledErrorLum 10
 #define rele 12
 #define led 13
 
@@ -159,7 +161,7 @@ int calculaCaso() {
 
   if (luminosidad == ERRORLUM) {
     Serial.println(F("Error de sensor de luminosidad"));
-    caso  = -1;
+    caso  = -3;
   } else if (luminosidad != NOLUM && luminosidad < LUMDIA && feelTemp != NOTEMP && feelTemp > T36 && feelTemp <= T38 && feelTemp != CALORHUMRELALTA && feelTemp != CALOR2HUMRELALTA) {
     Serial.println(F("No hay luz, pero temperatura muy elevada (36 - 38 ºC)"));
     caso = 13;
@@ -205,10 +207,10 @@ int calculaCaso() {
     caso = 12;
   } else  if (feelTemp < 0 && feelTemp != ERRORTEMP) {
     Serial.println(F("Temp negativa ¿¿??"));
-    caso = -2;
+    caso = -1;
   } else {
     Serial.println(F("Error de sensor de temp"));
-    caso  = -1;
+    caso  = -2;
   }
 
   return caso;
@@ -316,19 +318,31 @@ void ejecutaCaso(int caso) {
       // Sensor de temperatura/humedad desactivado. Modo temporizador.
       ejecutaModo();
       Serial.println(F("Caso 17: Sensor de temperatura/humedad desactivado. Modo temporizador: 4min"));
-      delay(240000);
+      delay(180000);
       break;
     case -1:
-      Serial.println(F("Error: REVISE SENSORES: 90min"));
-      delay(5400000);
-      break;
-    case -2:
       Serial.println(F("Temp negativa: 60min"));
       delay(3600000);
       break;
+    case -2:
+      Serial.println(F("Error: REVISE SENSOR TEMP: 10min"));
+      on(ledErrorTemp);
+      delay(600000);
+      off(ledErrorTemp);
+      break;
+    case -3:
+      Serial.println(F("Error: REVISE SENSOR LUM: 10min"));
+      on(ledErrorLum);
+      delay(600000);
+      off(ledErrorLum);
+      break;
     default:
-      Serial.println(F("El sistema no esta funcionando correctamente: 30min"));
-      delay(1200000);
+      Serial.println(F("El sistema no esta funcionando correctamente: 10min"));
+      on(ledErrorTemp);
+      on(ledErrorLum);
+      delay(600000);
+      off(ledErrorLum);
+      off(ledErrorTemp);
       break;
   }
 }
@@ -341,12 +355,11 @@ void ejecutaModo() {
   Serial.print(F("Ultima ejecucion (ms): "));
   Serial.println(tiempoms);
 
-  int msDelay = 4 * digitalRead(l4)
-                + 5 * digitalRead(l5)
-                + 6 * digitalRead(l6)
-                + 7 * digitalRead(l7)
-                + 8 * digitalRead(l8)
-                + 9 * digitalRead(l9);
+  int msDelay = 5 * digitalRead(l4)
+                + 10 * digitalRead(l5)
+                + 15 * digitalRead(l6)
+                + 30 * digitalRead(l7)
+                + 60 * digitalRead(l8);
   msDelay *= 1000;
 
   if (msDelay > 0) {
