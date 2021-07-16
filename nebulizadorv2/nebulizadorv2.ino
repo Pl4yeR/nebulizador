@@ -86,7 +86,7 @@ void setup() {
 
   // Inicializamos el sensor temp/hum
   dht.begin();
-  delay(2000);
+  delay(50);
 
   avisoReinicio();
 
@@ -97,13 +97,13 @@ void setup() {
 
 void avisoReinicio()
 {
-  // Hace parpadear los leds 3 veces para avisar de un reinicio
-  for (int i = 0; i < 3; i++)
+  // Hace parpadear los leds 5 veces para avisar de un reinicio
+  for (int i = 0; i < 5; i++)
   {
     on(led);
-    delay(500);
+    delay(50);
     off(led);
-    delay(500);
+    delay(50);
   }
 }
 
@@ -392,6 +392,10 @@ void leeHumTemp()
     Serial.println(F("Sensor de temperatura y humedad desactivado."));
     return;
   }
+  // Encendemos LED de error junto a LED de funcionamiento
+  on(led);
+  on(ledErrorTemp);
+  
   //Lectura de los sensores de humedad y temperatura
   humedad = dht.readHumidity();
   temperatura = dht.readTemperature();
@@ -415,7 +419,11 @@ void leeHumTemp()
   Serial.print(hIndex);
   Serial.println(F("(C)."));
 
-  delay(2000);
+  delay(250);
+  
+  // Apagamos LED de error junto a LED de funcionamiento
+  off(ledErrorTemp);
+  off(led);
 }
 
 void leeLuminosidad()
@@ -425,6 +433,10 @@ void leeLuminosidad()
     Serial.println(F("Sensor de luminosidad desactivado."));
     return;
   }
+  // Encendemos LED de error junto a LED de funcionamiento
+  on(led);
+  on(ledErrorLum);
+  
   // Lectura del sensor de luminosidad
   luminosidad = analogRead(senLum);
   if (luminosidad <= 1 || luminosidad > 1024) {
@@ -432,6 +444,12 @@ void leeLuminosidad()
   }
   Serial.print(F("Luminosidad: "));
   Serial.println(luminosidad);
+
+   delay(250);
+   
+  // Apagamos LED de error junto a LED de funcionamiento
+  off(ledErrorLum);
+  off(led);
 }
 
 void on() {
@@ -453,4 +471,3 @@ void on(int l)
 {
   digitalWrite(l, HIGH);
 }
-

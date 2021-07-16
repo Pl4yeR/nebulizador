@@ -23,7 +23,9 @@ Descomprimir DHT_lib.zip en la carpeta libraries de arduino.
 
 - A0: Sensor Luminosidad
 - 11: Sensor humedad/temperatura
-- 12: Control (in) relé (Activo en baja)
+- 9: Led de error de lectura de humedad/temperatura
+- 10: Led de error de lectura de luminosidad
+- 12: Control (in) relé (Activo en alta)
 - 13: Led informativo (Activo en alta)
 
 - 2: On/Off sensor luminosidad (Activo en alta)
@@ -44,12 +46,13 @@ Descomprimir DHT_lib.zip en la carpeta libraries de arduino.
 
 ## Funcionamiento
 
-Al conectar el sistema el LED informativo parpadeará 3 veces si todo ha ido correctamente.
+Al conectar el sistema el LED informativo parpadeará 5 veces rápidamente si todo ha ido correctamente.
+Durante las lecturas de parámetros se iluminarán los leds de error MÁS el de funcionamiento
 
 ### Casos de error
 
 - Si la lectura de humedad/temperatura devuelve NaN (not a number) O la lectura de luminosidad devuelve un valor inferior a 0 o superior a 1024
-  - El sistema entra en modo de error de sensores, ilumina el led de error correspondiente, no opera e intenta una nueva lectura en 10min.
+  - El sistema entra en modo de error de sensores, ilumina el led de error correspondiente (SIN el de funcionamiento), no opera e intenta una nueva lectura en 10min.
 
 ### Casos especiales
 
