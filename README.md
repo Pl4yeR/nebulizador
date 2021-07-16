@@ -25,7 +25,7 @@ Descomprimir DHT_lib.zip en la carpeta libraries de arduino.
 - 11: Sensor humedad/temperatura
 - 9: Led de error de lectura de humedad/temperatura
 - 10: Led de error de lectura de luminosidad
-- 12: Control (in) relé (Activo en alta)
+- 12: Control (in) relé (Activo en baja)
 - 13: Led informativo (Activo en alta)
 
 - 2: On/Off sensor luminosidad (Activo en alta)
