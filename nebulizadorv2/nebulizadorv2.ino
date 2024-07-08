@@ -80,6 +80,17 @@ void setup() {
   pinMode(l8, INPUT);
 
   // Reseteamos todo
+  digitalWrite(led, LOW);
+  digitalWrite(rele, HIGH);
+  digitalWrite(lumEnabled, LOW);
+  digitalWrite(tempEnabled, LOW);
+  digitalWrite(ledErrorTemp, LOW);
+  digitalWrite(ledErrorLum, LOW);
+  digitalWrite(l4, LOW);
+  digitalWrite(l5, LOW);
+  digitalWrite(l6, LOW);
+  digitalWrite(l7, LOW);
+  digitalWrite(l8, LOW);
   off();
   humedad = temperatura = hIndex  = 0;
   luminosidad = 0;
@@ -234,50 +245,50 @@ void ejecutaCaso(int caso) {
     case 3:
       // 28 - 30
       ejecutaModo();
-      Serial.println(F("Caso 3: 10min"));
-      delay(600000);
+      Serial.println(F("Caso 3: 25min"));
+      delay(150000);
       break;
     case 4:
       // 30 - 32
       ejecutaModo();
-      Serial.println(F("Caso 4: 4min"));
-      delay(240000);
+      Serial.println(F("Caso 4: 6min"));
+      delay(360000);
       break;
     case 5:
       // 32 - 34
       ejecutaModo();
-      Serial.println(F("Caso 5: 3min"));
-      delay(180000);
+      Serial.println(F("Caso 5: 4min"));
+      delay(240000);
       break;
     case 6:
       // 34 - 36
       ejecutaModo();
-      Serial.println(F("Caso 6: 75s"));
-      delay(75000);
+      Serial.println(F("Caso 6: 3min"));
+      delay(180000);
       break;
     case 7:
       // 36 - 38
       ejecutaModo();
-      Serial.println(F("Caso 7: 60s"));
-      delay(60000);
+      Serial.println(F("Caso 7: 2.5min"));
+      delay(150000);
       break;
     case 8:
       // 38 - 40
       ejecutaModo();
-      Serial.println(F("Caso 8: 40s"));
-      delay(40000);
+      Serial.println(F("Caso 8: 100s"));
+      delay(100000);
       break;
     case 9:
       // 40 - 42
       ejecutaModo();
-      Serial.println(F("Caso 9: 30s"));
-      delay(30000);
+      Serial.println(F("Caso 9: 75s"));
+      delay(75000);
       break;
     case 10:
       // 42 - inf
       ejecutaModo();
-      Serial.println(F("Caso 10: 30s"));
-      delay(30000);
+      Serial.println(F("Caso 10: 60s"));
+      delay(60000);
       break;
     case 11:
       // %hum rel alta y calor
@@ -294,14 +305,14 @@ void ejecutaCaso(int caso) {
     case 13:
       // 36 - 38 (no luz)
       ejecutaModo();
-      Serial.println(F("Caso 13: Calor sin luz (36-38): 45min"));
-      delay(2700000);
+      Serial.println(F("Caso 13: Calor sin luz (36-38): 60min"));
+      delay(3600000);
       break;
     case 14:
       // 38 - inf (no luz)
       ejecutaModo();
-      Serial.println(F("Caso 14: Calor sin luz (> 38): 35min"));
-      delay(2100000);
+      Serial.println(F("Caso 14: Calor sin luz (> 38): 60min"));
+      delay(3600000);
       break;
     case 15:
       // Calor %hum alta (no luz)
@@ -318,8 +329,8 @@ void ejecutaCaso(int caso) {
     case 17:
       // Sensor de temperatura/humedad desactivado. Modo temporizador.
       ejecutaModo();
-      Serial.println(F("Caso 17: Sensor de temperatura/humedad desactivado. Modo temporizador: 4min"));
-      delay(180000);
+      Serial.println(F("Caso 17: Sensor de temperatura/humedad desactivado. Modo temporizador: 10min"));
+      delay(600000);
       break;
     case -1:
       Serial.println(F("Temp negativa: 60min"));
