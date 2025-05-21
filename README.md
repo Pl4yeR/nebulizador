@@ -1,4 +1,38 @@
-# nebulizador v2
+# Water Nebulization System
+
+## Project Overview
+This project implements a water nebulization system using an Arduino. The system utilizes a DHT11 sensor for monitoring temperature and humidity, a solenoid valve for controlling water flow, a MOSFET for power management, and LED indicators for status notifications.
+
+## Components Used
+- **Arduino Board**: The microcontroller that runs the code.
+- **DHT11 Sensor**: Measures temperature and humidity.
+- **Solenoid Valve**: Controls the flow of water in the nebulization system.
+- **MOSFET**: Used to switch the solenoid valve on and off.
+- **LED Indicators**: Provide visual feedback on system status.
+
+## Setup Instructions
+1. **Hardware Connections**:
+   - Connect the DHT11 sensor to the designated pins on the Arduino.
+   - Wire the solenoid valve to the MOSFET, ensuring proper power supply.
+   - Connect the LED indicators to the appropriate pins.
+
+2. **Software Installation**:
+   - Install the Arduino IDE on your computer.
+   - Ensure you have the necessary libraries for the DHT11 sensor.
+
+3. **Uploading the Code**:
+   - Open the `nebulizadorv3.ino` file in the Arduino IDE.
+   - Select the correct board and port from the Tools menu.
+   - Upload the sketch to the Arduino.
+
+4. **Running the Project**:
+   - Once uploaded, the system will initialize and begin monitoring temperature and humidity.
+   - The solenoid valve will be controlled based on the logic defined in the code.
+
+## Future Enhancements
+- Implement additional sensors for more precise control.
+- Add a user interface for easier interaction.
+- Integrate data logging for monitoring environmental conditions over time.
 
 ## Preparar
 
