@@ -21,7 +21,7 @@ DHT dht(DHTPIN, DHTTYPE);
 
 // Thresholds and constants
 const unsigned int LOOP_DELAY_MS = 250;        // Delay for the main loop
-const unsigned int LONG_PRESS_DURATION = 2000; // Duration for long press in milliseconds
+const unsigned int LONG_PRESS_DURATION = 1000; // Duration for long press in milliseconds
 
 const int LUMINOSITY_THRESHOLD = 640; // Threshold for luminosity sensor
 
@@ -38,9 +38,11 @@ float humidity = 0.0;
 float temperature = 0.0;
 float hIndex = 0.0;
 int luminosity = 0.0;
+
 unsigned long valveActiveTimeMS = 5000; // 5 seconds default
 unsigned long lastButtonPressTime = 0;  // For button debouncing
-int lastButtonState = HIGH;             // Assuming pull-up resistor, so HIGH when not pressed
+bool lastButtonState = HIGH;            // Assuming pull-up resistor, so HIGH when not pressed
+unsigned int manualOn = 0;
 
 // Timing variables for non-blocking operation
 unsigned long cycleStartTime = 0;
@@ -198,9 +200,11 @@ void manageValveLoop(unsigned long currentTime)
     return;
   }
 
-  if (luminosity >= LUMINOSITY_THRESHOLD && hIndex >= MIN_HINDEX_THRESHOLD)
+  if ((luminosity >= LUMINOSITY_THRESHOLD && hIndex >= MIN_HINDEX_THRESHOLD) || manualOn > 0)
   {
-    if (!isValveActive && (currentTime - cycleStartTime >= currentCycleDelayMs))
+    unsigned long calculatedValveActiveTimeMS = (manualOn > 0) ? (manualOn * valveActiveTimeMS) : valveActiveTimeMS;
+
+    if (!isValveActive && ((currentTime - cycleStartTime >= currentCycleDelayMs) || manualOn > 0))
     {
       // Time to start a new cycle and activate the valve
 
@@ -223,18 +227,27 @@ void manageValveLoop(unsigned long currentTime)
       if (currentCycleDelayMs > MAX_FREQUENCY_MS)
         currentCycleDelayMs = MAX_FREQUENCY_MS;
 
-      Serial.print(F("hIndex ABOVE threshold. Activating valve for "));
-      Serial.print(valveActiveTimeMS);
+      if (manualOn > 0)
+      {
+        Serial.print(F("Manual ON."));
+      }
+      else
+      {
+        Serial.print(F("hIndex ABOVE threshold."));
+      }
+      Serial.print(F(" Activating valve for "));
+      Serial.print(calculatedValveActiveTimeMS);
       Serial.println(F("ms."));
 
       controlSolenoidValve(true);
       cycleStartTime = currentTime;
     }
 
-    if (isValveActive && (currentTime - cycleStartTime >= valveActiveTimeMS))
+    if (isValveActive && (currentTime - cycleStartTime >= calculatedValveActiveTimeMS))
     {
       // Time to deactivate the valve
       controlSolenoidValve(false);
+      manualOn = 0; // Reset manualOn after the valve is deactivated
     }
   }
   else // hIndex < MIN_HINDEX_THRESHOLD OR luminosity < LUMINOSITY_THRESHOLD
@@ -379,6 +392,7 @@ void readButton()
     else
     {
       Serial.println(F("Button long press."));
+      manualOn = floor(msFromPress / LONG_PRESS_DURATION);
     }
   }
 
