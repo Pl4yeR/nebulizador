@@ -7,6 +7,7 @@
 
 // Pin definitions
 const int LUMINOSITY_SENSOR_PIN = A0; // Pin for luminosity sensor
+const int BUTTON_PIN = 2;             // Pin for the button
 const int DHTPIN = 3;                 // Pin for DHT11 sensor
 const int SOLENOID_PIN = 8;           // Pin for solenoid valve
 const int LED_STATUS_1 = 13;          // Pin for LED indicator
@@ -18,18 +19,28 @@ const int DHTTYPE = DHT11;
 DHT dht(DHTPIN, DHTTYPE);
 
 // Thresholds and constants
-const int LUMINOSITY_ERROR_VALUE = -1;     // Constant for luminosity error
-unsigned long VALVE_ACTIVE_TIME_MS = 5000; // 5 seconds default
+const unsigned long LOOP_DELAY_MS = 300; // Delay for the main loop
+const int LUMINOSITY_ERROR_VALUE = -1;   // Constant for luminosity error
 const float MIN_HINDEX_THRESHOLD = 30.0;
 const float MAX_HINDEX_THRESHOLD = 38.0;
 const unsigned long MAX_FREQUENCY_MS = 300000; // Seconds maximum interval for proportional control, adjust as needed
-unsigned long MIN_FREQUENCY_MS = 60000;        // Seconds minimum interval for proportional control, adjust as needed
+const unsigned long MIN_FREQUENCY_MS = 60000;  // Seconds minimum interval for proportional control, adjust as needed
 
 // Global variables
-float humidity;
-float temperature;
-float hIndex;
-int luminosity;
+float humidity = 0.0;
+float temperature = 0.0;
+float hIndex = 0.0;
+int luminosity = 0.0;
+unsigned long valveActiveTimeMS = 5000; // 5 seconds default
+unsigned long lastButtonPressTime = 0;  // For button debouncing
+int lastButtonState = HIGH;             // Assuming pull-up resistor, so HIGH when not pressed
+bool buttonPressed = false;             // Flag to indicate a valid button press
+
+// Timing variables for non-blocking operation
+unsigned long cycleStartTime = 0;
+unsigned long currentCycleDelayMs = 0; // Stores the calculated delay for the current cycle
+unsigned long sensorReadTime = 0;      // Time of the last sensor read
+bool isValveActive = false;
 
 // Setup function
 void setup()
@@ -45,18 +56,13 @@ void setup()
   pinMode(LED_STATUS_2, OUTPUT);
   pinMode(LED_STATUS_3, OUTPUT);
   pinMode(LUMINOSITY_SENSOR_PIN, INPUT);
+  pinMode(BUTTON_PIN, INPUT_PULLUP); // Initialize button pin with internal pull-up
 
   // Initialize pins to LOW
   digitalWrite(SOLENOID_PIN, LOW);
   digitalWrite(LED_STATUS_1, LOW);
   digitalWrite(LED_STATUS_2, LOW);
   digitalWrite(LED_STATUS_3, LOW);
-
-  // Initialize global variables to default values
-  humidity = 0.0;
-  temperature = 0.0;
-  hIndex = 0.0;
-  luminosity = 0;
 
   // Initialize the DHT sensor
   dht.begin();
@@ -69,15 +75,23 @@ void setup()
 // Loop function
 void loop()
 {
-  // Read sensor data
-  readDHTSensor();
-  readLuminositySensor();
+  unsigned long currentTime = millis();
+
+  if (currentTime - sensorReadTime >= currentCycleDelayMs)
+  { // Read sensors every currentCycleDelayMs ms
+    sensorReadTime = currentTime;
+    readDHTSensor();
+    readLuminositySensor();
+  }
+
+  // Always Read button state
+  readButton();
 
   // Check for sensor errors
   if (isnan(humidity) || isnan(temperature) || luminosity == LUMINOSITY_ERROR_VALUE)
   {
     Serial.println(F("Error reading sensors. Skipping valve control."));
-    delay(5000); // Wait before retrying
+    delay(LOOP_DELAY_MS);
     return;
   }
 
@@ -86,56 +100,66 @@ void loop()
 
   if (hIndex >= MIN_HINDEX_THRESHOLD)
   {
-    unsigned long delayTimeMs;
+    if (!isValveActive && (currentTime - cycleStartTime >= currentCycleDelayMs))
+    {
+      // Time to start a new cycle and activate the valve
 
-    if (hIndex >= MAX_HINDEX_THRESHOLD)
-    {
-      delayTimeMs = MAX_FREQUENCY_MS;
-      Serial.print(F("hIndex above max threshold. Activating valve every "));
-      Serial.print(delayTimeMs);
-      Serial.println(F("ms."));
-    }
-    else
-    {
       // Proportional control: map hIndex range to frequency range
       // Range of hIndex: MAX_HINDEX_THRESHOLD - MIN_HINDEX_THRESHOLD
       // Range of frequency: MAX_FREQUENCY_MS - MIN_FREQUENCY_MS (inverted: shorter delay for higher hIndex)
-      // We want frequency to increase as hIndex increases, so delayTimeMs should decrease.
+      // We want frequency to increase as hIndex increases, so currentCycleDelayMs should decrease.
       // A simple linear mapping:
       // factor = (hIndex - MIN_HINDEX_THRESHOLD) / (MAX_HINDEX_THRESHOLD - MIN_HINDEX_THRESHOLD)
-      // delayTimeMs = MAX_FREQUENCY_MS - factor * (MAX_FREQUENCY_MS - MIN_FREQUENCY_MS)
+      // currentCycleDelayMs = MAX_FREQUENCY_MS - factor * (MAX_FREQUENCY_MS - MIN_FREQUENCY_MS)
       float hIndexRange = MAX_HINDEX_THRESHOLD - MIN_HINDEX_THRESHOLD;
       if (hIndexRange <= 0)
-        hIndexRange = 1; // Avoid division by zero if thresholds are equal
+        hIndexRange = 1;
+
       float factor = (hIndex - MIN_HINDEX_THRESHOLD) / hIndexRange;
-      delayTimeMs = MAX_FREQUENCY_MS - (unsigned long)(factor * (MAX_FREQUENCY_MS - MIN_FREQUENCY_MS));
 
-      // Ensure delayTimeMs is within bounds
-      if (delayTimeMs < MIN_FREQUENCY_MS)
-        delayTimeMs = MIN_FREQUENCY_MS;
-      if (delayTimeMs > MAX_FREQUENCY_MS)
-        delayTimeMs = MAX_FREQUENCY_MS;
+      currentCycleDelayMs = MAX_FREQUENCY_MS - (unsigned long)(factor * (MAX_FREQUENCY_MS - MIN_FREQUENCY_MS));
+      if (currentCycleDelayMs < MIN_FREQUENCY_MS)
+        currentCycleDelayMs = MIN_FREQUENCY_MS;
+      if (currentCycleDelayMs > MAX_FREQUENCY_MS)
+        currentCycleDelayMs = MAX_FREQUENCY_MS;
 
-      Serial.print(F("hIndex in proportional range. Activating valve every "));
-      Serial.print(delayTimeMs);
+      Serial.print(F("hIndex ABOVE minimum threshold. Activating valve for "));
+      Serial.print(valveActiveTimeMS);
       Serial.println(F("ms."));
+
+      controlSolenoidValve(true);
+      digitalWrite(LED_STATUS_1, HIGH);
+      isValveActive = true;
+      cycleStartTime = currentTime;
     }
 
-    Serial.println(F("Activating solenoid valve."));
-    controlSolenoidValve(true);
-    digitalWrite(LED_STATUS_1, HIGH); // Indicate valve is active
-    delay(VALVE_ACTIVE_TIME_MS);
-    controlSolenoidValve(false);
-    digitalWrite(LED_STATUS_1, LOW);
-    Serial.println(F("Solenoid valve deactivated. Waiting for next cycle."));
-    delay(delayTimeMs - VALVE_ACTIVE_TIME_MS); // Wait for the remaining part of the cycle
+    if (isValveActive && (currentTime - cycleStartTime >= valveActiveTimeMS))
+    {
+      // Time to deactivate the valve
+      controlSolenoidValve(false);
+      digitalWrite(LED_STATUS_1, LOW);
+      isValveActive = false;
+    }
   }
-  else
+  else // hIndex < MIN_HINDEX_THRESHOLD
   {
-    Serial.println(F("hIndex below minimum threshold. Valve remains closed."));
-    // Optional: add a longer delay here if no action is needed for a while
-    delay(MAX_FREQUENCY_MS); // Wait for a standard period before re-checking
+    if (isValveActive)
+    { // If valve was active (e.g. hIndex just dropped), deactivate it
+      Serial.println(F("hIndex dropped BELOW threshold. Deactivating solenoid valve."));
+      controlSolenoidValve(false);
+      digitalWrite(LED_STATUS_1, LOW);
+      isValveActive = false;
+    }
+    // Check if it's time to print the status message
+    if (currentTime - cycleStartTime >= currentCycleDelayMs)
+    {
+      Serial.println(F("hIndex BELOW minimum threshold. Valve remains closed."));
+      cycleStartTime = currentTime;
+      currentCycleDelayMs = MAX_FREQUENCY_MS;
+    }
   }
+
+  delay(LOOP_DELAY_MS);
 }
 
 // Function to create a light sequence
@@ -250,4 +274,37 @@ void controlSolenoidValve(bool activate)
     digitalWrite(SOLENOID_PIN, LOW); // Deactivate the MOSFET, closing the solenoid valve
     Serial.println(F("Válvula solenoide desactivada."));
   }
+}
+
+// Function to read button state and update valveActiveTimeMS
+void readButton()
+{
+  int currentButtonState = digitalRead(BUTTON_PIN);
+
+  // Debounce logic
+  if (currentButtonState != lastButtonState)
+  {
+    lastButtonPressTime = millis();
+  }
+
+  if ((millis() - lastButtonPressTime) > 50)
+  { // 50ms debounce delay
+    if (currentButtonState == LOW && lastButtonState == HIGH && !buttonPressed)
+    {                       // Button pressed (LOW state due to INPUT_PULLUP)
+      buttonPressed = true; // Mark as pressed to avoid multiple increments per press
+      Serial.println(F("Button pressed."));
+      valveActiveTimeMS += 5000;
+      if (valveActiveTimeMS > 20000)
+      {
+        valveActiveTimeMS = 5000;
+      }
+      Serial.print(F("New valveActiveTimeMS: "));
+      Serial.println(valveActiveTimeMS);
+    }
+    else if (currentButtonState == HIGH)
+    {
+      buttonPressed = false; // Reset button pressed flag when released
+    }
+  }
+  lastButtonState = currentButtonState;
 }
