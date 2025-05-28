@@ -169,7 +169,7 @@ void readSensorsLoop(unsigned long currentTime)
   if (currentTime - sensorReadTime >= currentCycleDelayMs)
   { // Read sensors every currentCycleDelayMs ms
     sensorReadTime = currentTime;
-    Serial.println(F("Iniciando lectura de los sensores..."));
+    Serial.println(F("Starting sensor reading..."));
     readDHTSensor();
     readLuminositySensor();
   }
@@ -216,11 +216,12 @@ void manageValveLoop(unsigned long currentTime)
       // currentCycleDelayMs = MAX_FREQUENCY_MS - factor * (MAX_FREQUENCY_MS - MIN_FREQUENCY_MS)
       float hIndexRange = MAX_HINDEX_THRESHOLD - MIN_HINDEX_THRESHOLD;
       if (hIndexRange <= 0)
-        hIndexRange = 1;
+        hIndexRange = 1; // Avoid division by zero or negative
 
       float factor = (hIndex - MIN_HINDEX_THRESHOLD) / hIndexRange;
 
       currentCycleDelayMs = MAX_FREQUENCY_MS - (unsigned long)(factor * (MAX_FREQUENCY_MS - MIN_FREQUENCY_MS));
+      // Clamp the value to be within defined min/max frequencies
       if (currentCycleDelayMs < MIN_FREQUENCY_MS)
         currentCycleDelayMs = MIN_FREQUENCY_MS;
       if (currentCycleDelayMs > MAX_FREQUENCY_MS)
@@ -238,7 +239,7 @@ void manageValveLoop(unsigned long currentTime)
       Serial.print(calculatedValveActiveTimeMS);
       Serial.println(F("ms."));
 
-      controlSolenoidValve(calculatedValveActiveTimeMS > 0); // If 0, dont activate the valve
+      controlSolenoidValve(calculatedValveActiveTimeMS > 0); // If 0, do not activate the valve
       cycleStartTime = currentTime;
     }
 
@@ -260,8 +261,8 @@ void manageValveLoop(unsigned long currentTime)
     if (currentTime - cycleStartTime >= currentCycleDelayMs)
     {
       Serial.println(F("hIndex or luminosity BELOW threshold. Valve remains closed."));
-      cycleStartTime = currentTime;
-      currentCycleDelayMs = MAX_FREQUENCY_MS;
+      cycleStartTime = currentTime;           // Reset cycle start time
+      currentCycleDelayMs = MAX_FREQUENCY_MS; // Reset to max delay as we are in a "calm" state
     }
   }
 }
@@ -269,68 +270,68 @@ void manageValveLoop(unsigned long currentTime)
 // Function to read DHT sensor data
 void readDHTSensor()
 {
-  digitalWrite(LED_STATUS_2, HIGH); // Encender el segundo LED (LED_STATUS_2)
-  digitalWrite(LED_STATUS_3, LOW);  // Asegurarse que el LED de error esté apagado al iniciar
+  digitalWrite(LED_STATUS_2, HIGH); // Turn on the second LED (LED_STATUS_2)
+  digitalWrite(LED_STATUS_3, LOW);  // Ensure the error LED is off at the start
 
-  // Leer humedad
+  // Read humidity
   humidity = dht.readHumidity();
-  // Leer temperatura en Celsius (por defecto)
+  // Read temperature in Celsius (default)
   temperature = dht.readTemperature();
 
-  // Comprobar si alguna lectura falló
+  // Check if any reading failed
   if (isnan(humidity) || isnan(temperature))
   {
-    Serial.println(F("¡Fallo al leer del sensor DHT!"));
-    digitalWrite(LED_STATUS_2, LOW);  // Apagar el LED de actividad
-    digitalWrite(LED_STATUS_3, HIGH); // Encender el tercer LED (LED de error)
-    hIndex = NAN;                     // Indicar valor de error
+    Serial.println(F("Failed to read from DHT sensor!"));
+    digitalWrite(LED_STATUS_2, LOW);  // Turn off the activity LED
+    digitalWrite(LED_STATUS_3, HIGH); // Turn on the third LED (Error LED)
+    hIndex = NAN;                     // Indicate error value
     return;
   }
 
-  // Calcular el índice de calor en Celsius (isFahreheit = false)
+  // Calculate heat index in Celsius (isFahreheit = false)
   hIndex = dht.computeHeatIndex(temperature, humidity, false);
 
-  // Imprimir los valores en el monitor serie
-  Serial.print(F("Humedad: "));
+  // Print values to the serial monitor
+  Serial.print(F("Humidity: "));
   Serial.print(humidity);
   Serial.println(F(" %"));
 
-  Serial.print(F("Temperatura: "));
+  Serial.print(F("Temperature: "));
   Serial.print(temperature);
   Serial.println(F(" °C"));
 
-  Serial.print(F("Índice de calor: "));
+  Serial.print(F("Heat Index: "));
   Serial.print(hIndex);
   Serial.println(F(" °C"));
 
-  digitalWrite(LED_STATUS_2, LOW); // Apagar el LED de actividad
+  digitalWrite(LED_STATUS_2, LOW); // Turn off the activity LED
 }
 
 // Function to read luminosity sensor data
 void readLuminositySensor()
 {
-  digitalWrite(LED_STATUS_2, HIGH); // Encender el segundo LED (LED_STATUS_2)
-  digitalWrite(LED_STATUS_3, LOW);  // Asegurarse que el LED de error esté apagado al iniciar
+  digitalWrite(LED_STATUS_2, HIGH); // Turn on the second LED (LED_STATUS_2)
+  digitalWrite(LED_STATUS_3, LOW);  // Ensure the error LED is off at the start
 
-  // Leer el valor del sensor de luminosidad
+  // Read the value from the luminosity sensor
   luminosity = analogRead(LUMINOSITY_SENSOR_PIN);
 
-  // Comprobar si la lectura es válida (ej. para un sensor de 10 bits, el rango es 0-1023)
-  // Ajustar el rango según las características específicas del sensor y del ADC
+  // Check if the reading is valid (e.g., for a 10-bit sensor, the range is 0-1023)
+  // Adjust the range according to the specific characteristics of the sensor and ADC
   if (luminosity < 0 || luminosity > 1023)
-  { // Asumiendo un ADC de 10 bits, valores fuera de 0-1023 son anómalos
-    Serial.println(F("¡Error al leer el sensor de luminosidad!"));
-    digitalWrite(LED_STATUS_2, LOW);  // Apagar el LED de actividad
-    digitalWrite(LED_STATUS_3, HIGH); // Encender el LED de error
-    luminosity = NAN;                 // Indicar valor de error
+  { // Assuming a 10-bit ADC, values outside 0-1023 are anomalous
+    Serial.println(F("Error reading luminosity sensor!"));
+    digitalWrite(LED_STATUS_2, LOW);  // Turn off the activity LED
+    digitalWrite(LED_STATUS_3, HIGH); // Turn on the error LED
+    luminosity = NAN;                 // Indicate error value
     return;
   }
 
-  // Imprimir el valor en el monitor serie
-  Serial.print(F("Luminosidad: "));
+  // Print the value to the serial monitor
+  Serial.print(F("Luminosity: "));
   Serial.println(luminosity);
 
-  digitalWrite(LED_STATUS_2, LOW); // Apagar el LED de actividad
+  digitalWrite(LED_STATUS_2, LOW); // Turn off the activity LED
 }
 
 // Function to control the solenoid valve
@@ -343,13 +344,13 @@ void controlSolenoidValve(bool activate)
   if (activate)
   {
     digitalWrite(SOLENOID_PIN, HIGH); // Activate the MOSFET, opening the solenoid valve
-    Serial.println(F("Válvula solenoide activada."));
+    Serial.println(F("Solenoid valve activated."));
     digitalWrite(LED_STATUS_2, HIGH); // Turn on the activity LED
   }
   else
   {
     digitalWrite(SOLENOID_PIN, LOW); // Deactivate the MOSFET, closing the solenoid valve
-    Serial.println(F("Válvula solenoide desactivada."));
+    Serial.println(F("Solenoid valve deactivated."));
     digitalWrite(LED_STATUS_2, LOW); // Turn off the activity LED
   }
 }
@@ -367,7 +368,7 @@ void readButton()
 
   if (lastButtonState == HIGH && currentButtonState == LOW)
   {
-    Serial.print(F("Manual btn press: "));
+    Serial.print(F("Manual button press: ")); // Changed from "Manual btn press: "
     lastButtonPressTime = millis();
   }
   else if (lastButtonState == LOW && currentButtonState == HIGH)
@@ -391,7 +392,7 @@ void readButton()
     else
     {
       Serial.println(F("Button long press."));
-      manualOn = floor(msFromPress / LONG_PRESS_DURATION);
+      manualOn = floor(msFromPress / LONG_PRESS_DURATION); // Calculate how many full LONG_PRESS_DURATION intervals passed
     }
   }
 
