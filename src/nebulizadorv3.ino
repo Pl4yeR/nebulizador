@@ -140,7 +140,6 @@ void blinkLedStatusLoop(unsigned long currentTime)
     led1BlinkCount = 0;               // Reset blink counter
     led1BlinkState = LOW;             // Ensure LED starts off for the first blink
     led1LastToggleTime = currentTime; // Initialize toggle time
-    digitalWrite(LED_STATUS_1, LOW);  // Ensure LED is off before starting a new blink sequence if it was left on
   }
 
   // Non-blocking LED_STATUS_1 blinking execution
@@ -360,8 +359,7 @@ void readButton()
   unsigned long msFromPress = millis() - lastButtonPressTime;
 
   if (msFromPress < 50)
-  {
-    // Debounce the dirty way
+  { // Debounce the dirty way
     return;
   }
 
@@ -385,6 +383,7 @@ void readButton()
       Serial.print(F("New valveActiveTimeMS: "));
       Serial.println(valveActiveTimeMS);
 
+      led1LastToggleTime = 0;                    // Reset the LED blinking timer
       led1BlinksToDo = valveActiveTimeMS / 5000; // Update the number of blinks based on the new valveActiveTimeMS
       Serial.print(F("New led1BlinksToDo: "));
       Serial.println(led1BlinksToDo);
