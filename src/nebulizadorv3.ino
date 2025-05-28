@@ -239,7 +239,7 @@ void manageValveLoop(unsigned long currentTime)
       Serial.print(calculatedValveActiveTimeMS);
       Serial.println(F("ms."));
 
-      controlSolenoidValve(true);
+      controlSolenoidValve(calculatedValveActiveTimeMS > 0); // If 0, dont activate the valve
       cycleStartTime = currentTime;
     }
 
@@ -380,7 +380,7 @@ void readButton()
       valveActiveTimeMS += 5000;
       if (valveActiveTimeMS > 20000)
       {
-        valveActiveTimeMS = 5000;
+        valveActiveTimeMS = 0; // 0 so it will be disabled
       }
       Serial.print(F("New valveActiveTimeMS: "));
       Serial.println(valveActiveTimeMS);
