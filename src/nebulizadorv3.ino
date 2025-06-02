@@ -25,10 +25,10 @@ const unsigned int LONG_PRESS_DURATION = 1000; // Duration for long press in mil
 
 const int LUMINOSITY_THRESHOLD = 640; // Threshold for luminosity sensor
 
-const float MIN_HINDEX_THRESHOLD = 32.0;
+const float MIN_HINDEX_THRESHOLD = 30.0;
 const float MAX_HINDEX_THRESHOLD = 39.0;
-const unsigned long MAX_FREQUENCY_MS = 600000; // Seconds maximum interval for proportional control, adjust as needed
-const unsigned long MIN_FREQUENCY_MS = 90000;  // Seconds minimum interval for proportional control, adjust as needed
+const unsigned long MAX_FREQUENCY_MS = 900000; // Milliseconds maximum interval for proportional control, adjust as needed
+const unsigned long MIN_FREQUENCY_MS = 90000;  // Milliseconds minimum interval for proportional control, adjust as needed
 
 const unsigned int LED1_BLINK_INTERVAL_MS = 5000; // Blink every X seconds
 const unsigned int LED1_BLINK_DURATION_MS = 100;  // Duration of each blink
@@ -239,6 +239,9 @@ void manageValveLoop(unsigned long currentTime)
       Serial.print(calculatedValveActiveTimeMS);
       Serial.println(F("ms."));
 
+      Serial.print(F("Next check in "));
+      Serial.println(String(currentCycleDelayMs) + F("ms."));
+
       controlSolenoidValve(calculatedValveActiveTimeMS > 0); // If 0, do not activate the valve
       cycleStartTime = currentTime;
     }
@@ -263,6 +266,8 @@ void manageValveLoop(unsigned long currentTime)
       Serial.println(F("hIndex or luminosity BELOW threshold. Valve remains closed."));
       cycleStartTime = currentTime;           // Reset cycle start time
       currentCycleDelayMs = MAX_FREQUENCY_MS; // Reset to max delay as we are in a "calm" state
+      Serial.print(F("Next check in "));
+      Serial.println(String(currentCycleDelayMs) + F("ms."));
     }
   }
 }
