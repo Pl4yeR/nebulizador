@@ -28,7 +28,7 @@ const int LUMINOSITY_THRESHOLD = 640; // Threshold for luminosity sensor
 const float MIN_HINDEX_THRESHOLD = 30.5;
 const float MAX_HINDEX_THRESHOLD = 39.0;
 const unsigned long MAX_FREQUENCY_MS = 1800000; // Milliseconds maximum interval for proportional control, adjust as needed
-const unsigned long MIN_FREQUENCY_MS = 60000;  // Milliseconds minimum interval for proportional control, adjust as needed
+const unsigned long MIN_FREQUENCY_MS = 60000;   // Milliseconds minimum interval for proportional control, adjust as needed
 
 const unsigned int LED1_BLINK_INTERVAL_MS = 5000; // Blink every X seconds
 const unsigned int LED1_BLINK_DURATION_MS = 100;  // Duration of each blink
@@ -105,25 +105,23 @@ void loop()
 // Function to create a light sequence
 void bootSequence()
 {
+  for (int i = 0; i < 3; i++)
+{
   digitalWrite(LED_STATUS_1, HIGH);
-  delay(500);
-  digitalWrite(LED_STATUS_1, LOW);
-  delay(500);
+    delay(100);
   digitalWrite(LED_STATUS_2, HIGH);
-  delay(500);
-  digitalWrite(LED_STATUS_2, LOW);
-  delay(500);
+    delay(100);
   digitalWrite(LED_STATUS_3, HIGH);
+
   delay(500);
-  digitalWrite(LED_STATUS_3, LOW);
-  delay(500);
-  digitalWrite(LED_STATUS_1, HIGH);
-  digitalWrite(LED_STATUS_2, HIGH);
-  digitalWrite(LED_STATUS_3, HIGH);
-  delay(2000);
+
   digitalWrite(LED_STATUS_1, LOW);
+    delay(100);
   digitalWrite(LED_STATUS_2, LOW);
+    delay(100);
   digitalWrite(LED_STATUS_3, LOW);
+    delay(100);
+  }
 }
 
 /**
