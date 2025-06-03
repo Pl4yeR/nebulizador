@@ -106,20 +106,20 @@ void loop()
 void bootSequence()
 {
   for (int i = 0; i < 3; i++)
-{
-  digitalWrite(LED_STATUS_1, HIGH);
+  {
+    digitalWrite(LED_STATUS_1, HIGH);
     delay(100);
-  digitalWrite(LED_STATUS_2, HIGH);
+    digitalWrite(LED_STATUS_2, HIGH);
     delay(100);
-  digitalWrite(LED_STATUS_3, HIGH);
+    digitalWrite(LED_STATUS_3, HIGH);
 
-  delay(500);
+    delay(500);
 
-  digitalWrite(LED_STATUS_1, LOW);
+    digitalWrite(LED_STATUS_1, LOW);
     delay(100);
-  digitalWrite(LED_STATUS_2, LOW);
+    digitalWrite(LED_STATUS_2, LOW);
     delay(100);
-  digitalWrite(LED_STATUS_3, LOW);
+    digitalWrite(LED_STATUS_3, LOW);
     delay(100);
   }
 }
@@ -256,7 +256,7 @@ void manageValveLoop(unsigned long currentTime)
   {
     if (isValveActive)
     { // If valve was active (e.g. hIndex just dropped or luminosity dropped), deactivate it
-      Serial.println(F("hIndex or luminosity dropped BELOW threshold. Deactivating solenoid valve."));
+      Serial.println(F("Values dropped BELOW threshold or manual off. Deactivating solenoid valve."));
       controlSolenoidValve(false);
     }
     // Check if it's time to print the status message
@@ -380,18 +380,25 @@ void readButton()
     if (msFromPress < LONG_PRESS_DURATION)
     {
       Serial.println(F("Button short press"));
-      valveActiveTimeMS += 5000;
-      if (valveActiveTimeMS > 20000)
-      {
-        valveActiveTimeMS = 0; // 0 so it will be disabled
+      if (manualOn > 0)
+      { // If manualOn is already set, it means we are toggling the manual mode off
+        manualOn = 0;
       }
-      Serial.print(F("New valveActiveTimeMS: "));
-      Serial.println(valveActiveTimeMS);
+      else
+      { // Otherwise, we are changing the valveActiveTimeMS
+        valveActiveTimeMS += 5000;
+        if (valveActiveTimeMS > 30000)
+        {
+          valveActiveTimeMS = 0; // 0 so it will be disabled
+        }
+        Serial.print(F("New valveActiveTimeMS: "));
+        Serial.println(valveActiveTimeMS);
 
-      led1LastToggleTime = 0;                    // Reset the LED blinking timer
-      led1BlinksToDo = valveActiveTimeMS / 5000; // Update the number of blinks based on the new valveActiveTimeMS
-      Serial.print(F("New led1BlinksToDo: "));
-      Serial.println(led1BlinksToDo);
+        led1LastToggleTime = 0;                    // Reset the LED blinking timer
+        led1BlinksToDo = valveActiveTimeMS / 5000; // Update the number of blinks based on the new valveActiveTimeMS
+        Serial.print(F("New led1BlinksToDo: "));
+        Serial.println(led1BlinksToDo);
+      }
     }
     else
     {
