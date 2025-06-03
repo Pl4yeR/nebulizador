@@ -211,16 +211,17 @@ void manageValveLoop(unsigned long currentTime)
       // Range of hIndex: MAX_HINDEX_THRESHOLD - MIN_HINDEX_THRESHOLD
       // Range of frequency: MAX_FREQUENCY_MS - MIN_FREQUENCY_MS (inverted: shorter delay for higher hIndex)
       // We want frequency to increase as hIndex increases, so currentCycleDelayMs should decrease.
-      // A simple linear mapping:
-      // factor = (hIndex - MIN_HINDEX_THRESHOLD) / (MAX_HINDEX_THRESHOLD - MIN_HINDEX_THRESHOLD)
-      // currentCycleDelayMs = MAX_FREQUENCY_MS - factor * (MAX_FREQUENCY_MS - MIN_FREQUENCY_MS)
+      // Non-linear mapping using ease-out function: decreases fast at the beginning, slower at the end
+
       float hIndexRange = MAX_HINDEX_THRESHOLD - MIN_HINDEX_THRESHOLD;
       if (hIndexRange <= 0)
         hIndexRange = 1; // Avoid division by zero or negative
 
       float factor = (hIndex - MIN_HINDEX_THRESHOLD) / hIndexRange;
+      float oneMinusFactor = 1.0 - factor;
+      float easeOutFactor = 1.0 - (oneMinusFactor * oneMinusFactor * oneMinusFactor); // Ease-out function (creates the ease-out curve)
 
-      currentCycleDelayMs = MAX_FREQUENCY_MS - (unsigned long)(factor * (MAX_FREQUENCY_MS - MIN_FREQUENCY_MS));
+      currentCycleDelayMs = MAX_FREQUENCY_MS - (unsigned long)(easeOutFactor * (MAX_FREQUENCY_MS - MIN_FREQUENCY_MS));
       // Clamp the value to be within defined min/max frequencies
       if (currentCycleDelayMs < MIN_FREQUENCY_MS)
         currentCycleDelayMs = MIN_FREQUENCY_MS;
