@@ -25,7 +25,7 @@ const unsigned int LONG_PRESS_DURATION = 1000; // Duration for long press in mil
 
 const int LUMINOSITY_THRESHOLD = 420; // Threshold for luminosity sensor
 
-const float MIN_HINDEX_THRESHOLD = 30.0;
+const float MIN_HINDEX_THRESHOLD = 29.8;
 const float MAX_HINDEX_THRESHOLD = 39.0;
 const unsigned long MAX_FREQUENCY_MS = 1800000; // Milliseconds maximum interval for proportional control, adjust as needed
 const unsigned long MIN_FREQUENCY_MS = 50000;   // Milliseconds minimum interval for proportional control, adjust as needed
