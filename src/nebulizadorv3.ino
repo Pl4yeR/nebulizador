@@ -23,7 +23,7 @@ DHT dht(DHTPIN, DHTTYPE);
 const unsigned int LOOP_DELAY_MS = 250;        // Delay for the main loop
 const unsigned int LONG_PRESS_DURATION = 1000; // Duration for long press in milliseconds
 
-const int LUMINOSITY_THRESHOLD = 440; // Threshold for luminosity sensor
+const int LUMINOSITY_THRESHOLD = 420; // Threshold for luminosity sensor
 
 const float MIN_HINDEX_THRESHOLD = 30.0;
 const float MAX_HINDEX_THRESHOLD = 39.0;
