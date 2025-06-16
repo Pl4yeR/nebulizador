@@ -26,9 +26,9 @@ const unsigned int LONG_PRESS_DURATION = 1000; // Duration for long press in mil
 const int LUMINOSITY_THRESHOLD = 330; // Threshold for luminosity sensor
 
 const float MIN_HINDEX_THRESHOLD = 29.8;
-const float MAX_HINDEX_THRESHOLD = 38.5;
-const unsigned long MAX_FREQUENCY_MS = 1800000; // Milliseconds maximum interval for proportional control, adjust as needed
-const unsigned long MIN_FREQUENCY_MS = 50000;   // Milliseconds minimum interval for proportional control, adjust as needed
+const float MAX_HINDEX_THRESHOLD = 39;
+const unsigned long MAX_FREQUENCY_MS = 1200000; // Milliseconds maximum interval for proportional control, adjust as needed
+const unsigned long MIN_FREQUENCY_MS = 80000;   // Milliseconds minimum interval for proportional control, adjust as needed
 
 const unsigned int LED1_BLINK_INTERVAL_MS = 5000; // Blink every X seconds
 const unsigned int LED1_BLINK_DURATION_MS = 100;  // Duration of each blink
@@ -51,9 +51,9 @@ unsigned long sensorReadTime = 0;      // Time of the last sensor read
 bool isValveActive = false;
 
 // Variables for LED_STATUS_1 blinking
-int led1BlinksToDo = valveActiveTimeMS / 5000;
+byte led1BlinksToDo = valveActiveTimeMS / 5000;
 bool led1BlinkState = LOW;
-int led1BlinkCount = 0;
+byte led1BlinkCount = 0;
 unsigned long led1LastToggleTime = 0;
 
 // Setup function
@@ -394,8 +394,9 @@ void readButton()
         Serial.print(F("New valveActiveTimeMS: "));
         Serial.println(valveActiveTimeMS);
 
-        led1LastToggleTime = 0;                    // Reset the LED blinking timer
         led1BlinksToDo = valveActiveTimeMS / 5000; // Update the number of blinks based on the new valveActiveTimeMS
+        led1LastToggleTime = 0;                    // Reset the LED blinking timer
+        led1BlinkCount = UINT8_MAX;                // Reset the blink count
         Serial.print(F("New led1BlinksToDo: "));
         Serial.println(led1BlinksToDo);
       }
