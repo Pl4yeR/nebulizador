@@ -28,7 +28,7 @@ const int LUMINOSITY_THRESHOLD = 420; // Threshold for luminosity sensor
 const float MIN_HINDEX_THRESHOLD = 29.8;
 const float MAX_HINDEX_THRESHOLD = 39;
 const unsigned long MAX_FREQUENCY_MS = 1500000; // Milliseconds maximum interval for proportional control, adjust as needed
-const unsigned long MIN_FREQUENCY_MS = 180000;   // Milliseconds minimum interval for proportional control, adjust as needed
+const unsigned long MIN_FREQUENCY_MS = 300000;   // Milliseconds minimum interval for proportional control, adjust as needed
 
 const unsigned int LED1_BLINK_INTERVAL_MS = 5000; // Blink every X seconds
 const unsigned int LED1_BLINK_DURATION_MS = 100;  // Duration of each blink
@@ -39,7 +39,7 @@ float temperature = 0.0;
 float hIndex = 0.0;
 int luminosity = 0.0;
 
-unsigned long valveActiveTimeMS = 10000; // 10 seconds default
+unsigned long valveActiveTimeMS = 15000; // 15 seconds default
 unsigned long lastButtonPressTime = 0;  // For button debouncing
 bool lastButtonState = HIGH;            // Assuming pull-up resistor, so HIGH when not pressed
 unsigned int manualOn = 0;
