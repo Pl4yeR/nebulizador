@@ -23,12 +23,12 @@ DHT dht(DHTPIN, DHTTYPE);
 const unsigned int LOOP_DELAY_MS = 250;        // Delay for the main loop
 const unsigned int LONG_PRESS_DURATION = 1000; // Duration for long press in milliseconds
 
-const int LUMINOSITY_THRESHOLD = 330; // Threshold for luminosity sensor
+const int LUMINOSITY_THRESHOLD = 420; // Threshold for luminosity sensor
 
 const float MIN_HINDEX_THRESHOLD = 29.8;
 const float MAX_HINDEX_THRESHOLD = 39;
-const unsigned long MAX_FREQUENCY_MS = 1200000; // Milliseconds maximum interval for proportional control, adjust as needed
-const unsigned long MIN_FREQUENCY_MS = 80000;   // Milliseconds minimum interval for proportional control, adjust as needed
+const unsigned long MAX_FREQUENCY_MS = 1500000; // Milliseconds maximum interval for proportional control, adjust as needed
+const unsigned long MIN_FREQUENCY_MS = 180000;   // Milliseconds minimum interval for proportional control, adjust as needed
 
 const unsigned int LED1_BLINK_INTERVAL_MS = 5000; // Blink every X seconds
 const unsigned int LED1_BLINK_DURATION_MS = 100;  // Duration of each blink
