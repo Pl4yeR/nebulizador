@@ -16,12 +16,9 @@
 
 namespace {
 constexpr uint32_t WIFI_TIMEOUT_MS = 15000;
-constexpr uint32_t MRD_CLEAR_DELAY_MS = (uint32_t)(MRD_TIMEOUT + 1) * 1000UL;
 
 MultiResetDetector *s_mrd = nullptr;
 ESP8266WebServer s_server(80);
-unsigned long s_mrdArmedAtMs = 0;
-bool s_mrdCleared = true;
 } // namespace
 
 bool otaTaskCheckTrigger() {
@@ -33,18 +30,14 @@ bool otaTaskCheckTrigger() {
     return true;
   }
 
-  s_mrdArmedAtMs = millis();
-  s_mrdCleared = false;
   return false;
 }
 
-void otaTaskLoop(unsigned long now) {
-  if (s_mrdCleared)
-    return;
-  if (now - s_mrdArmedAtMs >= MRD_CLEAR_DELAY_MS) {
-    s_mrd->stop();
-    s_mrdCleared = true;
-  }
+void otaTaskLoop() {
+  // MultiResetDetector::loop() owns its own millis()-based timeout and calls
+  // stop() internally once the reset-detection window (MRD_TIMEOUT) elapses —
+  // no need to track that here.
+  s_mrd->loop();
 }
 
 void otaTaskDisableWifi() { WiFi.mode(WIFI_OFF); }

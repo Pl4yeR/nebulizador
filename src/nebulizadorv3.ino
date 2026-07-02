@@ -34,7 +34,7 @@ void loop() {
   sensorsTaskLoop(now, valveTaskGetSensorIntervalMs());
   valveTaskLoop(now, sensorsGetHeatIndex(), sensorsReadIsValid());
   ledTaskLoop(now);
-  otaTaskLoop(now);
+  otaTaskLoop();
 
   delay(LOOP_DELAY_MS);
 }

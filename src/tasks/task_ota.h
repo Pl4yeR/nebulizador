@@ -6,9 +6,9 @@
 // entered immediately via otaTaskEnter().
 bool otaTaskCheckTrigger();
 
-// Clears the reset-detection window once it has elapsed. Call on every normal
-// (non-OTA) loop tick.
-void otaTaskLoop(unsigned long now);
+// Lets the reset detector clear its window once it has elapsed. Call on every
+// normal (non-OTA) loop tick.
+void otaTaskLoop();
 
 // Disables WiFi for normal operation — only OTA mode needs the radio.
 void otaTaskDisableWifi();
