@@ -1,0 +1,95 @@
+#include "task_ota.h"
+
+#include <ESP8266WebServer.h>
+#include <ESP8266WiFi.h>
+#include <ElegantOTA.h>
+
+#define ESP_MRD_USE_EEPROM true
+#define MRD_TIMES 3
+#define MRD_TIMEOUT 10
+#define MRD_ADDRESS 0
+#include <ESP_MultiResetDetector.h>
+
+#include "config.h"
+#include "task_led.h"
+#include "task_valve.h"
+
+namespace {
+constexpr uint32_t WIFI_TIMEOUT_MS = 15000;
+constexpr uint32_t MRD_CLEAR_DELAY_MS = (uint32_t)(MRD_TIMEOUT + 1) * 1000UL;
+
+MultiResetDetector *s_mrd = nullptr;
+ESP8266WebServer s_server(80);
+unsigned long s_mrdArmedAtMs = 0;
+bool s_mrdCleared = true;
+} // namespace
+
+bool otaTaskCheckTrigger() {
+  s_mrd = new MultiResetDetector(MRD_TIMEOUT, MRD_ADDRESS);
+
+  if (s_mrd->detectMultiReset()) {
+    Serial.println(F("[OTA] Triple reset detected"));
+    s_mrd->stop();
+    return true;
+  }
+
+  s_mrdArmedAtMs = millis();
+  s_mrdCleared = false;
+  return false;
+}
+
+void otaTaskLoop(unsigned long now) {
+  if (s_mrdCleared)
+    return;
+  if (now - s_mrdArmedAtMs >= MRD_CLEAR_DELAY_MS) {
+    s_mrd->stop();
+    s_mrdCleared = true;
+  }
+}
+
+void otaTaskDisableWifi() { WiFi.mode(WIFI_OFF); }
+
+void otaTaskEnter() {
+  Serial.println(F("[OTA] Entering OTA mode"));
+  ledTaskSetMode(LedMode::Ota);
+  valveTaskForceClose();
+
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  Serial.printf("[OTA] Connecting to %s\n", WIFI_SSID);
+
+  unsigned long t0 = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - t0 < WIFI_TIMEOUT_MS) {
+    delay(250);
+  }
+
+  String ip;
+  if (WiFi.status() == WL_CONNECTED) {
+    ip = WiFi.localIP().toString();
+    Serial.printf("[OTA] Connected — IP: %s\n", ip.c_str());
+  } else {
+    Serial.println(F("[OTA] WiFi failed — starting AP"));
+    WiFi.mode(WIFI_AP);
+    String apName = "Nebulizador-OTA-" + String(ESP.getChipId(), HEX);
+    WiFi.softAP(apName.c_str(), OTA_AP_PASSWORD);
+    ip = WiFi.softAPIP().toString();
+    Serial.printf("[OTA] AP: %s  IP: %s\n", apName.c_str(), ip.c_str());
+  }
+
+  s_server.on("/", []() {
+    s_server.send(200, "text/html",
+                  F("<html><body>Hi! This is Nebulizador OTA update page. Go to "
+                    "<a href=\"/update\">/update</a> to start.</body></html>"));
+  });
+
+  ElegantOTA.begin(&s_server, "admin", OTA_AP_PASSWORD);
+  s_server.begin();
+  Serial.printf("[OTA] Ready at http://%s/update\n", ip.c_str());
+
+  for (;;) {
+    s_server.handleClient();
+    ElegantOTA.loop();
+    ledTaskLoop(millis());
+    delay(2);
+  }
+}
