@@ -5,56 +5,32 @@
 // Include necessary libraries
 #include <DHT.h>
 #include "Arduino.h"
-
-// Pin definitions
-const int LUMINOSITY_SENSOR_PIN = A0; // Pin for luminosity sensor
-const int BUTTON_PIN = 2;             // Pin for the button
-const int DHTPIN = 3;                 // Pin for DHT11 sensor
-const int SOLENOID_PIN = 8;           // Pin for solenoid valve
-const int LED_STATUS_1 = 13;          // Pin for LED indicator
-const int LED_STATUS_2 = 12;          // Pin for LED indicator
-const int LED_STATUS_3 = 11;          // Pin for LED indicator
+#include "pins.h"
 
 // DHT sensor type
 const int DHTTYPE = DHT11;
 DHT dht(DHTPIN, DHTTYPE);
 
 // Thresholds and constants
-const unsigned int LOOP_DELAY_MS = 250;        // Delay for the main loop
-const unsigned int LONG_PRESS_DURATION = 1000; // Duration for long press in milliseconds
-
-const int LUMINOSITY_THRESHOLD = 420; // Threshold for luminosity sensor
+const unsigned int LOOP_DELAY_MS = 250; // Delay for the main loop
 
 const float MIN_HINDEX_THRESHOLD = 29.8;
 const float MAX_HINDEX_THRESHOLD = 39;
 const unsigned long MAX_FREQUENCY_MS = 1800000; // Milliseconds maximum interval for proportional control, adjust as needed
-const unsigned long MIN_FREQUENCY_MS = 300000;   // Milliseconds minimum interval for proportional control, adjust as needed
+const unsigned long MIN_FREQUENCY_MS = 300000;  // Milliseconds minimum interval for proportional control, adjust as needed
 
-const unsigned int LED1_BLINK_INTERVAL_MS = 5000; // Blink every X seconds
-const unsigned int LED1_BLINK_DURATION_MS = 100;  // Duration of each blink
+const unsigned long VALVE_ACTIVE_TIME_MS = 5000; // How long the valve stays open per activation
 
 // Global variables
 float humidity = 0.0;
 float temperature = 0.0;
 float hIndex = 0.0;
-int luminosity = 0.0;
-
-unsigned long valveActiveTimeMS = 5000; // 15 seconds default
-unsigned long lastButtonPressTime = 0;  // For button debouncing
-bool lastButtonState = HIGH;            // Assuming pull-up resistor, so HIGH when not pressed
-unsigned int manualOn = 0;
 
 // Timing variables for non-blocking operation
 unsigned long cycleStartTime = 0;
 unsigned long currentCycleDelayMs = 0; // Stores the calculated delay for the current cycle
 unsigned long sensorReadTime = 0;      // Time of the last sensor read
 bool isValveActive = false;
-
-// Variables for LED_STATUS_1 blinking
-byte led1BlinksToDo = valveActiveTimeMS / 5000;
-bool led1BlinkState = LOW;
-byte led1BlinkCount = 0;
-unsigned long led1LastToggleTime = 0;
 
 // Setup function
 void setup()
@@ -66,17 +42,11 @@ void setup()
 
   // Configure pin modes
   pinMode(SOLENOID_PIN, OUTPUT);
-  pinMode(LED_STATUS_1, OUTPUT);
-  pinMode(LED_STATUS_2, OUTPUT);
-  pinMode(LED_STATUS_3, OUTPUT);
-  pinMode(LUMINOSITY_SENSOR_PIN, INPUT);
-  pinMode(BUTTON_PIN, INPUT_PULLUP); // Initialize button pin with internal pull-up
+  pinMode(LED_BUILTIN, OUTPUT);
 
-  // Initialize pins to LOW
+  // Initialize pins to inactive state
   digitalWrite(SOLENOID_PIN, LOW);
-  digitalWrite(LED_STATUS_1, LOW);
-  digitalWrite(LED_STATUS_2, LOW);
-  digitalWrite(LED_STATUS_3, LOW);
+  digitalWrite(LED_BUILTIN, HIGH); // Built-in LED is active-low, HIGH = off
 
   // Initialize the DHT sensor
   dht.begin();
@@ -91,76 +61,29 @@ void loop()
 {
   unsigned long currentTime = millis();
 
-  blinkLedStatusLoop(currentTime);
-
   readSensorsLoop(currentTime);
-
-  readButton();
 
   manageValveLoop(currentTime);
 
   delay(LOOP_DELAY_MS);
 }
 
-// Function to create a light sequence
+// Function to create a light sequence on the built-in LED
 void bootSequence()
 {
   for (int i = 0; i < 3; i++)
   {
-    digitalWrite(LED_STATUS_1, HIGH);
-    delay(100);
-    digitalWrite(LED_STATUS_2, HIGH);
-    delay(100);
-    digitalWrite(LED_STATUS_3, HIGH);
-
-    delay(500);
-
-    digitalWrite(LED_STATUS_1, LOW);
-    delay(100);
-    digitalWrite(LED_STATUS_2, LOW);
-    delay(100);
-    digitalWrite(LED_STATUS_3, LOW);
-    delay(100);
-  }
-}
-
-/**
- * Function to handle LED_STATUS_1 blinking
- * This function checks if the time since the last toggle is greater than LED1_BLINK_INTERVAL_MS
- * If so, it toggles the LED_STATUS_1 state and updates the blink count
- * The LED blinks a number of times based on the valveActiveTimeMS
- */
-void blinkLedStatusLoop(unsigned long currentTime)
-{
-  // Handle LED_STATUS_1 blinking trigger
-  if (currentTime - led1LastToggleTime >= LED1_BLINK_INTERVAL_MS && led1BlinkCount >= led1BlinksToDo) // Only start new sequence if old one is done
-  {
-    led1BlinkCount = 0;               // Reset blink counter
-    led1BlinkState = LOW;             // Ensure LED starts off for the first blink
-    led1LastToggleTime = currentTime; // Initialize toggle time
-  }
-
-  // Non-blocking LED_STATUS_1 blinking execution
-  if (led1BlinkCount < led1BlinksToDo)
-  {
-    if (currentTime - led1LastToggleTime >= LED1_BLINK_DURATION_MS)
-    {
-      led1LastToggleTime = currentTime;
-      led1BlinkState = !led1BlinkState; // Toggle LED state
-      digitalWrite(LED_STATUS_1, led1BlinkState);
-
-      if (led1BlinkState == LOW)
-      { // Count a full blink when LED turns OFF
-        led1BlinkCount++;
-      }
-    }
+    digitalWrite(LED_BUILTIN, LOW); // LED on
+    delay(150);
+    digitalWrite(LED_BUILTIN, HIGH); // LED off
+    delay(150);
   }
 }
 
 /**
  * Function to read sensors in a non-blocking way
  * This function checks if the time since the last sensor read is greater than currentCycleDelayMs
- * If so, it reads the DHT and luminosity sensors
+ * If so, it reads the DHT sensor
  */
 void readSensorsLoop(unsigned long currentTime)
 {
@@ -169,7 +92,6 @@ void readSensorsLoop(unsigned long currentTime)
     sensorReadTime = currentTime;
     Serial.println(F("Starting sensor reading..."));
     readDHTSensor();
-    readLuminositySensor();
   }
 }
 
@@ -181,10 +103,10 @@ void readSensorsLoop(unsigned long currentTime)
 void manageValveLoop(unsigned long currentTime)
 {
   // Check for sensor errors
-  if (isnan(humidity) || isnan(temperature) || isnan(hIndex) || isnan(luminosity))
+  if (isnan(humidity) || isnan(temperature) || isnan(hIndex))
   {
     if (isValveActive)
-    { // If valve was active (e.g. hIndex just dropped or luminosity dropped), deactivate it
+    { // If valve was active (e.g. hIndex just dropped), deactivate it
       Serial.println(F("Error reading sensors. Deactivating solenoid valve."));
       controlSolenoidValve(false);
     }
@@ -197,11 +119,9 @@ void manageValveLoop(unsigned long currentTime)
     return;
   }
 
-  if ((luminosity >= LUMINOSITY_THRESHOLD && hIndex >= MIN_HINDEX_THRESHOLD) || manualOn > 0)
+  if (hIndex >= MIN_HINDEX_THRESHOLD)
   {
-    unsigned long calculatedValveActiveTimeMS = (manualOn > 0) ? (manualOn * valveActiveTimeMS) : valveActiveTimeMS;
-
-    if (!isValveActive && ((currentTime - cycleStartTime >= currentCycleDelayMs) || manualOn > 0))
+    if (!isValveActive && (currentTime - cycleStartTime >= currentCycleDelayMs))
     {
       // Time to start a new cycle and activate the valve
 
@@ -226,43 +146,34 @@ void manageValveLoop(unsigned long currentTime)
       if (currentCycleDelayMs > MAX_FREQUENCY_MS)
         currentCycleDelayMs = MAX_FREQUENCY_MS;
 
-      if (manualOn > 0)
-      {
-        Serial.print(F("Manual ON."));
-      }
-      else
-      {
-        Serial.print(F("hIndex ABOVE threshold."));
-      }
-      Serial.print(F(" Activating valve for "));
-      Serial.print(calculatedValveActiveTimeMS);
+      Serial.print(F("hIndex ABOVE threshold. Activating valve for "));
+      Serial.print(VALVE_ACTIVE_TIME_MS);
       Serial.println(F("ms."));
 
       Serial.print(F("Next check in "));
       Serial.println(String(currentCycleDelayMs) + F("ms."));
 
-      controlSolenoidValve(calculatedValveActiveTimeMS > 0); // If 0, do not activate the valve
+      controlSolenoidValve(true);
       cycleStartTime = currentTime;
     }
 
-    if (isValveActive && (currentTime - cycleStartTime >= calculatedValveActiveTimeMS))
+    if (isValveActive && (currentTime - cycleStartTime >= VALVE_ACTIVE_TIME_MS))
     {
       // Time to deactivate the valve
       controlSolenoidValve(false);
-      manualOn = 0; // Reset manualOn after the valve is deactivated
     }
   }
-  else // hIndex < MIN_HINDEX_THRESHOLD OR luminosity < LUMINOSITY_THRESHOLD
+  else // hIndex < MIN_HINDEX_THRESHOLD
   {
     if (isValveActive)
-    { // If valve was active (e.g. hIndex just dropped or luminosity dropped), deactivate it
-      Serial.println(F("Values dropped BELOW threshold or manual off. Deactivating solenoid valve."));
+    { // If valve was active (e.g. hIndex just dropped), deactivate it
+      Serial.println(F("hIndex dropped BELOW threshold. Deactivating solenoid valve."));
       controlSolenoidValve(false);
     }
     // Check if it's time to print the status message
     if (currentTime - cycleStartTime >= currentCycleDelayMs)
     {
-      Serial.println(F("hIndex or luminosity BELOW threshold. Valve remains closed."));
+      Serial.println(F("hIndex BELOW threshold. Valve remains closed."));
       cycleStartTime = currentTime;           // Reset cycle start time
       currentCycleDelayMs = MAX_FREQUENCY_MS; // Reset to max delay as we are in a "calm" state
       Serial.print(F("Next check in "));
@@ -274,9 +185,6 @@ void manageValveLoop(unsigned long currentTime)
 // Function to read DHT sensor data
 void readDHTSensor()
 {
-  digitalWrite(LED_STATUS_2, HIGH); // Turn on the second LED (LED_STATUS_2)
-  digitalWrite(LED_STATUS_3, LOW);  // Ensure the error LED is off at the start
-
   // Read humidity
   humidity = dht.readHumidity();
   // Read temperature in Celsius (default)
@@ -286,9 +194,7 @@ void readDHTSensor()
   if (isnan(humidity) || isnan(temperature))
   {
     Serial.println(F("Failed to read from DHT sensor!"));
-    digitalWrite(LED_STATUS_2, LOW);  // Turn off the activity LED
-    digitalWrite(LED_STATUS_3, HIGH); // Turn on the third LED (Error LED)
-    hIndex = NAN;                     // Indicate error value
+    hIndex = NAN; // Indicate error value
     return;
   }
 
@@ -307,35 +213,6 @@ void readDHTSensor()
   Serial.print(F("Heat Index: "));
   Serial.print(hIndex);
   Serial.println(F(" °C"));
-
-  digitalWrite(LED_STATUS_2, LOW); // Turn off the activity LED
-}
-
-// Function to read luminosity sensor data
-void readLuminositySensor()
-{
-  digitalWrite(LED_STATUS_2, HIGH); // Turn on the second LED (LED_STATUS_2)
-  digitalWrite(LED_STATUS_3, LOW);  // Ensure the error LED is off at the start
-
-  // Read the value from the luminosity sensor
-  luminosity = analogRead(LUMINOSITY_SENSOR_PIN);
-
-  // Check if the reading is valid (e.g., for a 10-bit sensor, the range is 0-1023)
-  // Adjust the range according to the specific characteristics of the sensor and ADC
-  if (luminosity < 0 || luminosity > 1023)
-  { // Assuming a 10-bit ADC, values outside 0-1023 are anomalous
-    Serial.println(F("Error reading luminosity sensor!"));
-    digitalWrite(LED_STATUS_2, LOW);  // Turn off the activity LED
-    digitalWrite(LED_STATUS_3, HIGH); // Turn on the error LED
-    luminosity = NAN;                 // Indicate error value
-    return;
-  }
-
-  // Print the value to the serial monitor
-  Serial.print(F("Luminosity: "));
-  Serial.println(luminosity);
-
-  digitalWrite(LED_STATUS_2, LOW); // Turn off the activity LED
 }
 
 // Function to control the solenoid valve
@@ -345,68 +222,8 @@ void controlSolenoidValve(bool activate)
 {
   isValveActive = activate;
 
-  if (activate)
-  {
-    digitalWrite(SOLENOID_PIN, HIGH); // Activate the MOSFET, opening the solenoid valve
-    Serial.println(F("Solenoid valve activated."));
-    digitalWrite(LED_STATUS_2, HIGH); // Turn on the activity LED
-  }
-  else
-  {
-    digitalWrite(SOLENOID_PIN, LOW); // Deactivate the MOSFET, closing the solenoid valve
-    Serial.println(F("Solenoid valve deactivated."));
-    digitalWrite(LED_STATUS_2, LOW); // Turn off the activity LED
-  }
-}
+  digitalWrite(SOLENOID_PIN, activate ? HIGH : LOW);
+  digitalWrite(LED_BUILTIN, activate ? LOW : HIGH); // Built-in LED mirrors the valve (active-low)
 
-void readButton()
-{
-  unsigned long msFromPress = millis() - lastButtonPressTime;
-
-  if (msFromPress < 50)
-  { // Debounce the dirty way
-    return;
-  }
-
-  bool currentButtonState = digitalRead(BUTTON_PIN);
-
-  if (lastButtonState == HIGH && currentButtonState == LOW)
-  {
-    Serial.print(F("Manual button press: ")); // Changed from "Manual btn press: "
-    lastButtonPressTime = millis();
-  }
-  else if (lastButtonState == LOW && currentButtonState == HIGH)
-  {
-    if (msFromPress < LONG_PRESS_DURATION)
-    {
-      Serial.println(F("Button short press"));
-      if (manualOn > 0)
-      { // If manualOn is already set, it means we are toggling the manual mode off
-        manualOn = 0;
-      }
-      else
-      { // Otherwise, we are changing the valveActiveTimeMS
-        valveActiveTimeMS += 5000;
-        if (valveActiveTimeMS > 30000)
-        {
-          valveActiveTimeMS = 0; // 0 so it will be disabled
-        }
-        Serial.print(F("New valveActiveTimeMS: "));
-        Serial.println(valveActiveTimeMS);
-
-        led1BlinksToDo = valveActiveTimeMS / 5000; // Update the number of blinks based on the new valveActiveTimeMS
-        led1LastToggleTime = 0;                    // Reset the LED blinking timer
-        led1BlinkCount = UINT8_MAX;                // Reset the blink count
-        Serial.print(F("New led1BlinksToDo: "));
-        Serial.println(led1BlinksToDo);
-      }
-    }
-    else
-    {
-      Serial.println(F("Button long press."));
-      manualOn = floor(msFromPress / LONG_PRESS_DURATION); // Calculate how many full LONG_PRESS_DURATION intervals passed
-    }
-  }
-
-  lastButtonState = currentButtonState;
+  Serial.println(activate ? F("Solenoid valve activated.") : F("Solenoid valve deactivated."));
 }
