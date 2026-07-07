@@ -8,7 +8,9 @@
 #include "pins.h"
 
 namespace {
-SHT31 s_sht30;
+// 0x45 is the Wemos SHT30 Shield's factory default (address jumper open);
+// shorting the jumper switches it to 0x44 (the SHT31 library's own default).
+SHT31 s_sht30(0x45);
 
 // SHT31::requestData()/dataReady()/readData() split the ~15ms measurement
 // into a fire-and-poll sequence instead of a single blocking read() call —

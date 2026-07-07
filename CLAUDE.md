@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Firmware for a water nebulizer/misting system, running on a Wemos D1 mini (ESP8266). It reads temperature/humidity from an ambient sensor (DHT11 or SHT30, see below), computes a heat index, and opens a solenoid valve (via a MOSFET trigger module) when it's hot enough — using non-blocking, cooperatively-scheduled "task" modules, not `delay()`-based sleeping between cycles.
 
-There are two firmware targets in [platformio.ini](platformio.ini), sharing everything except which physical sensor shield is wired up: `env:d1_mini` (DHT11, the default) and `env:d1_mini_sht30` (SHT30, I2C). Built with PlatformIO; there is no legacy Arduino UNO / Arduino IDE target in this codebase.
+There are two firmware targets in [platformio.ini](platformio.ini), sharing everything except which physical sensor shield is wired up: `env:d1_mini_dht11` (DHT11, the default) and `env:d1_mini_sht30` (SHT30, I2C). Built with PlatformIO; there is no legacy Arduino UNO / Arduino IDE target in this codebase.
 
 ## Build / flash
 
@@ -29,7 +29,17 @@ build_flags =
     -D SOLENOID_PIN=D2
 ```
 
-Defaults: `DHTPIN=D5` (`env:d1_mini` only), `SDA_PIN=D2`/`SCL_PIN=D6` (`env:d1_mini_sht30` only), `SOLENOID_PIN=D1` (both). The I2C pins are **not** the conventional ESP8266 default (SDA=D2/SCL=D1) — D1 is already `SOLENOID_PIN`, so `SCL` was moved to `D6` instead; keep this in mind if you ever need to free up `D1` for something else, since both defaults would need revisiting together. The status LED is *not* in `pins.h` — it's always `LED_BUILTIN` (GPIO2 / `D4`, active-low on the D1 mini), since that's fixed by the board rather than a wiring choice.
+**`pins.h`'s bare `#ifndef` fallbacks are the real, confirmed factory/wiring defaults for this project's actual shields**: DHT11 → `DHTPIN=D4`, SHT30 → `SDA_PIN=D2`/`SCL_PIN=D1`, Relay → `SOLENOID_PIN=D1` (the latter two verified directly against `wemos.cc`'s own per-shield docs — their official "DHT Shield" is actually a DHT12 over the *same* I2C bus as the SHT30 shield, not a single-wire sensor, so it isn't this project's DHT11 default; `D4` for that came directly from the user confirming their actual hardware). Two real collisions follow from this:
+- `SCL_PIN` vs `SOLENOID_PIN` (both `D1`) — you can't stack the Relay Shield with an I2C shield without reassigning one; `platformio.ini`'s `env:d1_mini_sht30` sets `SCL_PIN=D6` to resolve it.
+- `DHTPIN` vs `LED_BUILTIN` (both GPIO2 / `D4`) — see the callout below, this one isn't just resolved by an override since the DHT11 is what's actually wired to D4 on this hardware; `task_led.cpp` has to defensively coexist with it instead.
+
+This project's actual wiring is always resolved per environment in `platformio.ini`'s `build_flags`, never by relying on `pins.h`'s bare fallbacks alone: `env:d1_mini_dht11` sets `DHTPIN=D4`, `env:d1_mini_sht30` sets `SDA_PIN=D2`/`SCL_PIN=D6`. The status LED is *not* in `pins.h` — it's always `LED_BUILTIN` (GPIO2 / `D4`, active-low on the D1 mini, confirmed in the framework's own `variants/d1_mini/pins_arduino.h`), since that's fixed by the board rather than a wiring choice.
+
+**`DHTPIN=D4` means the DHT11 data line and the built-in LED share GPIO2 — traced through both library sources, not assumed:**
+- The Adafruit DHT library's `read()` (`DHT.cpp`) ends every read in `pinMode(_pin, INPUT_PULLUP)` — it never restores `OUTPUT` mode afterward.
+- ESP8266's `digitalWrite()` (`core_esp8266_wiring_digital.cpp`) only ever touches the GPIO output-set/clear registers (`GPOS`/`GPOC`) — it never touches the direction/enable register, unlike some other cores that fall back to toggling a pull-up on an input pin. So calling `digitalWrite()` on a pin currently in `INPUT_PULLUP` mode is a **silent no-op** on the physical pin.
+- Net effect: after the *first* DHT11 read post-boot, `GPIO2` is left in `INPUT_PULLUP`, and every subsequent `digitalWrite(LED_BUILTIN, ...)` from `task_led` would do nothing — the LED would freeze at whatever it last showed, not track the heartbeat/error/valve-active/OTA state at all.
+- **Fix**: `task_led.cpp`'s `ledTaskLoop()` and `ledTaskSetValveActive()` both call `pinMode(LED_BUILTIN, OUTPUT)` before writing, reclaiming the pin every 250ms tick (and on every valve toggle) regardless of what the last DHT read left it in. Residual cosmetic effect that's *not* fixed (and can't be, given the shared pin): the LED flickers erratically for the ~4-5ms of each DHT11 bit-bang read, once every 5–30min (`task_valve`'s cadence) — expected, harmless, and distinct from the frozen-LED bug the reclaim actually fixes.
 
 **Deliberately removed** (do not reintroduce without being asked): the luminosity/LDR sensor, the physical manual-override button, and separate activity/error status LEDs. The only status indicator is the board's built-in LED — it now carries a heartbeat + error-code blink system (see `task_led` below), so device errors *are* visible on it, just multiplexed onto the one LED rather than a dedicated pin.
 
@@ -61,7 +71,7 @@ src/
   nebulizadorv3.ino    — setup()/loop() orchestrator only; wires task modules together
   tasks/
     task_sensors.h        — shared interface; exactly one of the two .cpp below is compiled in (see below)
-    task_sensors_dht.cpp   — DHT11 backend (env:d1_mini)
+    task_sensors_dht.cpp   — DHT11 backend (env:d1_mini_dht11)
     task_sensors_sht30.cpp — SHT30 backend (env:d1_mini_sht30)
     task_valve.h/.cpp   — proportional-control valve decision + SOLENOID_PIN; owns the 5 HA-configurable control parameters
     task_led.h/.cpp     — LED_BUILTIN state machine (heartbeat / error codes / OTA fast-blink)
@@ -70,7 +80,7 @@ src/
 ```
 
 ### task_sensors — swappable DHT11 / SHT30 backends
-`task_sensors.h` is a fixed interface (`sensorsTaskBegin()`, `sensorsTaskLoop(now, intervalMs)`, `sensorsGetTemperature()`/`sensorsGetHumidity()`/`sensorsGetHeatIndex()`, `sensorsReadIsValid()`) implemented by **exactly one** of two mutually-exclusive `.cpp` files, selected per PlatformIO environment via `build_src_filter` in `platformio.ini` (`env:d1_mini` excludes `task_sensors_sht30.cpp`, `env:d1_mini_sht30` excludes `task_sensors_dht.cpp`) — never both at once, so there's no runtime branching or class hierarchy, just a straight swap of which translation unit provides the symbols. Every other module only ever calls the `task_sensors.h` functions, so nothing outside this pair of files needs to know which physical sensor is installed.
+`task_sensors.h` is a fixed interface (`sensorsTaskBegin()`, `sensorsTaskLoop(now, intervalMs)`, `sensorsGetTemperature()`/`sensorsGetHumidity()`/`sensorsGetHeatIndex()`, `sensorsReadIsValid()`) implemented by **exactly one** of two mutually-exclusive `.cpp` files, selected per PlatformIO environment via `build_src_filter` in `platformio.ini` (`env:d1_mini_dht11` excludes `task_sensors_sht30.cpp`, `env:d1_mini_sht30` excludes `task_sensors_dht.cpp`) — never both at once, so there's no runtime branching or class hierarchy, just a straight swap of which translation unit provides the symbols. Every other module only ever calls the `task_sensors.h` functions, so nothing outside this pair of files needs to know which physical sensor is installed.
 
 - **`task_sensors_dht.cpp`** (DHT11, single-wire, `DHTPIN`): unchanged from before — `s_dht.readHumidity()`/`readTemperature()` block briefly (a few ms, bit-banged) once per `intervalMs`, which is fine since reads are infrequent (5–30min cadence, driven by `task_valve`).
 - **`task_sensors_sht30.cpp`** (SHT30, I2C, `SDA_PIN`/`SCL_PIN`, `robtillaart/SHT31`): genuinely non-blocking, because the library's *async* interface splits what would otherwise be one blocking `read()` call into three pieces — `requestData()` (fires the I2C measurement command, returns immediately), `dataReady()` (a pure `millis()` check against the ~15ms measurement window, no I2C traffic — safe to poll every tick without ever blocking), and `readData()` (the actual I2C read, fast). `sensorsTaskLoop()` is a 2-state machine (`Idle`/`Measuring`) across this: when `intervalMs` elapses it calls `requestData()` and moves to `Measuring`; subsequent ticks just check `dataReady()` until it's true, then `readData()` and back to `Idle`. **Do not swap this for the library's plain `read()` method** — that blocks the entire cooperative `loop()` (valve, LED, MQTT, OTA-window checks) for the measurement duration, defeating the point of the task architecture.
@@ -99,6 +109,8 @@ The built-in LED is the device's only status output, so it multiplexes four thin
 Heartbeat and error bursts share one state machine (`s_displayedCode`/`s_step`/`s_lastToggle`): a burst of `blinkCount * 2` on/off steps (`BLINK_MS` each) followed by a `PAUSE_MS` gap. If the error code changes mid-cycle (including healthy ↔ error transitions), the burst restarts immediately rather than waiting out the old cycle, so changes are visible within one tick, not up to 5s late. Coming out of valve-active back to this display also forces a clean restart (`ledTaskSetValveActive(false)` resets `s_displayedCode` to the same sentinel used at boot) rather than resuming a stale mid-burst position from before the valve opened.
 
 Error sources live in `errors.h`/`errors.cpp` (project root, not under `tasks/`, since it's a cross-cutting concern multiple tasks touch) — a plain `ErrorFlags` bitmask with `getErrors()`/`setError()`/`clearError()`. Add new error sources as new bits there; `task_led` derives the blink count automatically, no changes needed on the LED side.
+
+Both `ledTaskLoop()` and `ledTaskSetValveActive()` call `pinMode(LED_BUILTIN, OUTPUT)` before every `digitalWrite()` — **do not remove this.** It's not defensive boilerplate; it's the fix for `DHTPIN` sharing GPIO2 with `LED_BUILTIN` (see "Pin configuration" above for the full trace through the DHT library and ESP8266 core). Without it, the LED silently freezes after the first DHT11 read post-boot.
 
 ### task_ota
 Modeled on Neverina's OTA mode, adapted for ESP8266 (`ESP8266WiFi`/`ESP8266WebServer` instead of `WiFi`/`WebServer`, `ESP.getChipId()` instead of `ESP.getEfuseMac()`). No BLE trigger exists in this project (there's no BLE at all), so **the only OTA trigger is a triple power-cycle within 10s**, detected via `ESP_MultiResetDetector` (EEPROM-backed):
