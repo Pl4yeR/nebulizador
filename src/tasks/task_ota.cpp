@@ -12,6 +12,7 @@
 
 #include "config.h"
 #include "task_led.h"
+#include "task_mqtt.h"
 #include "task_valve.h"
 
 namespace {
@@ -40,20 +41,26 @@ void otaTaskLoop() {
   s_mrd->loop();
 }
 
-void otaTaskDisableWifi() { WiFi.mode(WIFI_OFF); }
-
 void otaTaskEnter() {
   Serial.println(F("[OTA] Entering OTA mode"));
   ledTaskSetOtaMode();
   valveTaskForceClose();
+  mqttTaskDisconnect(); // No-op if task_mqtt never began this boot (e.g. triple-reset at cold boot)
 
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  Serial.printf("[OTA] Connecting to %s\n", WIFI_SSID);
+  if (WiFi.status() == WL_CONNECTED) {
+    // A prior normal-mode boot may have already connected WiFi (persisted STA
+    // credentials + the SDK's own auto-reconnect) even though task_mqtt never
+    // ran this boot — reuse it instead of tearing it down and reconnecting.
+    Serial.println(F("[OTA] WiFi already connected — reusing"));
+  } else {
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+    Serial.printf("[OTA] Connecting to %s\n", WIFI_SSID);
 
-  unsigned long t0 = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - t0 < WIFI_TIMEOUT_MS) {
-    delay(250);
+    unsigned long t0 = millis();
+    while (WiFi.status() != WL_CONNECTED && millis() - t0 < WIFI_TIMEOUT_MS) {
+      delay(250);
+    }
   }
 
   String ip;

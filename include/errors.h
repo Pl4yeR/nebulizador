@@ -7,7 +7,7 @@
 // sources as additional bits as they come up.
 namespace ErrorFlags {
 constexpr uint8_t NONE = 0x00;
-constexpr uint8_t DHT = 0x01; // DHT11 read failed (task_sensors)
+constexpr uint8_t SENSOR = 0x01; // Ambient sensor read failed (task_sensors_dht / task_sensors_sht30)
 } // namespace ErrorFlags
 
 uint8_t getErrors();

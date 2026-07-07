@@ -5,6 +5,7 @@
 #include <Arduino.h>
 
 #include "tasks/task_led.h"
+#include "tasks/task_mqtt.h"
 #include "tasks/task_ota.h"
 #include "tasks/task_sensors.h"
 #include "tasks/task_valve.h"
@@ -24,7 +25,7 @@ void setup() {
     return;
   }
 
-  otaTaskDisableWifi(); // Not needed in normal mode — only OTA mode uses WiFi
+  mqttTaskBegin(); // Brings WiFi up for normal operation — MQTT needs it always-on now
   Serial.println(F("[MAIN] Nebulizador ready."));
 }
 
@@ -33,6 +34,7 @@ void loop() {
 
   sensorsTaskLoop(now, valveTaskGetSensorIntervalMs());
   valveTaskLoop(now, sensorsGetHeatIndex(), sensorsReadIsValid());
+  mqttTaskLoop(now);
   ledTaskLoop(now);
   otaTaskLoop();
 

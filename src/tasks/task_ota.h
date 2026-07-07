@@ -10,9 +10,7 @@ bool otaTaskCheckTrigger();
 // normal (non-OTA) loop tick.
 void otaTaskLoop();
 
-// Disables WiFi for normal operation — only OTA mode needs the radio.
-void otaTaskDisableWifi();
-
-// Connects to WiFi and serves ElegantOTA at /update. Never returns — this is
-// a dead end only reached when otaTaskCheckTrigger() returns true.
+// Connects to WiFi (reusing it if task_mqtt already brought it up) and serves
+// ElegantOTA at /update. Never returns — this is a dead end only reached when
+// otaTaskCheckTrigger() returns true.
 void otaTaskEnter();

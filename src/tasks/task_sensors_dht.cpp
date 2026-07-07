@@ -3,6 +3,7 @@
 #include <DHT.h>
 
 #include "errors.h"
+#include "heat_index.h"
 #include "pins.h"
 
 namespace {
@@ -33,12 +34,12 @@ void sensorsTaskLoop(unsigned long now, unsigned long intervalMs) {
   if (isnan(s_humidity) || isnan(s_temperature)) {
     Serial.println(F("[SENSORS] Failed to read from DHT sensor!"));
     s_heatIndex = NAN;
-    setError(ErrorFlags::DHT);
+    setError(ErrorFlags::SENSOR);
     return;
   }
-  clearError(ErrorFlags::DHT);
+  clearError(ErrorFlags::SENSOR);
 
-  s_heatIndex = s_dht.computeHeatIndex(s_temperature, s_humidity, false);
+  s_heatIndex = computeHeatIndexC(s_temperature, s_humidity);
 
   Serial.print(F("[SENSORS] Humidity: "));
   Serial.print(s_humidity);
@@ -54,5 +55,9 @@ void sensorsTaskLoop(unsigned long now, unsigned long intervalMs) {
 }
 
 float sensorsGetHeatIndex() { return s_heatIndex; }
+
+float sensorsGetTemperature() { return s_temperature; }
+
+float sensorsGetHumidity() { return s_humidity; }
 
 bool sensorsReadIsValid() { return !isnan(s_humidity) && !isnan(s_temperature) && !isnan(s_heatIndex); }
