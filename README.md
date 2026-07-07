@@ -10,7 +10,7 @@ The firmware is split into small, single-purpose "task" modules (sensors, valve,
 - **DHT11 Sensor**: Measures temperature and humidity.
 - **Solenoid Valve**: Controls the flow of water in the nebulization system.
 - **MOSFET Trigger Switch Drive Module**: Switches the solenoid valve on and off.
-- **Built-in LED**: The only status indicator — mirrors valve state, blinks at boot, and fast-blinks in OTA mode.
+- **Built-in LED**: The only status indicator — heartbeat blink when healthy, an error blink code when something's wrong, solid on while the valve is misting, and a fast blink in OTA mode.
 
 ## Pin map
 
@@ -56,11 +56,28 @@ Normal operation keeps WiFi off. To flash new firmware over the air:
 3. Browse to `http://<ip>/update` and upload the new `firmware.bin`, authenticating with user `admin` and your `OTA_AP_PASSWORD`.
 4. OTA mode is a dead end — sensors/valve stop, and it stays in OTA mode until reflashed or power-cycled again.
 
+## LED de estado
+
+El LED integrado (`LED_BUILTIN`) es el único indicador visual. Cuando varias situaciones coinciden, manda la de mayor prioridad (de arriba a abajo en la tabla):
+
+| Situación | Patrón |
+|---|---|
+| Modo OTA | parpadeo rápido continuo (100ms) |
+| Válvula abierta (bombeando) | encendido fijo |
+| Error activo | ráfaga de N parpadeos cada ~5s, N según el código de error (ver tabla) |
+| Funcionamiento normal (sin errores) | 1 parpadeo cada ~5s (heartbeat) |
+| Arranque | 3 parpadeos rápidos (150ms), una vez, antes de lo anterior |
+
+| Código de error | Nº de parpadeos | Causa |
+|---|---|---|
+| `ErrorFlags::DHT` | 2 | Fallo de lectura del DHT11 |
+
+Nuevos errores se añaden como bits adicionales en [include/errors.h](include/errors.h); el número de parpadeos se deriva automáticamente del bit más bajo activo (bit N → N+2 parpadeos), sin tocar `task_led`.
+
 ## A tener en cuenta
 
 - La sensación térmica (heat index) se calcula a partir de la temperatura y la humedad relativa, y puede ser distinta de la temperatura medida.
-- Si la lectura del DHT11 falla (NaN), el sistema apaga la válvula si estaba activa, no opera y reintenta en el siguiente ciclo (250ms), quedando a la espera de una lectura válida.
-- El LED integrado es el único indicador de estado: parpadea 3 veces al arrancar, se enciende mientras la válvula está activa, y parpadea rápido en modo OTA. No hay indicación visual dedicada para errores de sensor — usar el monitor serie para depurar.
+- Si la lectura del DHT11 falla (NaN), el sistema apaga la válvula si estaba activa, no opera y reintenta en el siguiente ciclo (250ms), quedando a la espera de una lectura válida (y el LED pasa a parpadear el código de error correspondiente).
 
 ## Funcionamiento
 

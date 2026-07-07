@@ -21,7 +21,7 @@ bool s_isValveActive = false;
 void controlSolenoidValve(bool activate) {
   s_isValveActive = activate;
   digitalWrite(SOLENOID_PIN, activate ? HIGH : LOW);
-  ledTaskSetMode(activate ? LedMode::ValveActive : LedMode::Idle);
+  ledTaskSetValveActive(activate);
   Serial.println(activate ? F("[VALVE] Solenoid valve activated.") : F("[VALVE] Solenoid valve deactivated."));
 }
 } // namespace

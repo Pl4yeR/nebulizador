@@ -2,6 +2,7 @@
 
 #include <DHT.h>
 
+#include "errors.h"
 #include "pins.h"
 
 namespace {
@@ -32,8 +33,10 @@ void sensorsTaskLoop(unsigned long now, unsigned long intervalMs) {
   if (isnan(s_humidity) || isnan(s_temperature)) {
     Serial.println(F("[SENSORS] Failed to read from DHT sensor!"));
     s_heatIndex = NAN;
+    setError(ErrorFlags::DHT);
     return;
   }
+  clearError(ErrorFlags::DHT);
 
   s_heatIndex = s_dht.computeHeatIndex(s_temperature, s_humidity, false);
 

@@ -44,7 +44,7 @@ void otaTaskDisableWifi() { WiFi.mode(WIFI_OFF); }
 
 void otaTaskEnter() {
   Serial.println(F("[OTA] Entering OTA mode"));
-  ledTaskSetMode(LedMode::Ota);
+  ledTaskSetOtaMode();
   valveTaskForceClose();
 
   WiFi.mode(WIFI_STA);

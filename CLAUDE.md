@@ -30,7 +30,7 @@ build_flags =
 
 Defaults: `DHTPIN=D5`, `SOLENOID_PIN=D1`. The status LED is *not* in `pins.h` — it's always `LED_BUILTIN` (GPIO2 / `D4`, active-low on the D1 mini), since that's fixed by the board rather than a wiring choice.
 
-**Deliberately removed** (do not reintroduce without being asked): the luminosity/LDR sensor, the physical manual-override button, and separate activity/error status LEDs. The only status indicator is the board's built-in LED. There is no dedicated visual error indicator; sensor errors are Serial-only.
+**Deliberately removed** (do not reintroduce without being asked): the luminosity/LDR sensor, the physical manual-override button, and separate activity/error status LEDs. The only status indicator is the board's built-in LED — it now carries a heartbeat + error-code blink system (see `task_led` below), so device errors *are* visible on it, just multiplexed onto the one LED rather than a dedicated pin.
 
 ## Task architecture — and why it isn't FreeRTOS
 
@@ -40,7 +40,7 @@ This firmware's structure is modeled on a sibling project, **Neverina** (an ESP3
 
 - Each task module exposes a `xxxTaskLoop(now, ...)` function that does a small unit of work and returns immediately (never blocks, except deliberately inside `otaTaskEnter()` — see below).
 - `src/nebulizadorv3.ino`'s `loop()` calls each task's `Loop()` function once per 250ms tick (`LOOP_DELAY_MS`), in a fixed order, and that's the entire scheduler. There's no preemption, no priorities, no separate stacks.
-- Modules talk to each other through small, explicit getter/setter functions (e.g. `sensorsGetHeatIndex()`, `ledTaskSetMode()`) — not shared queues, since there's no concurrency to guard against.
+- Modules talk to each other through small, explicit getter/setter functions (e.g. `sensorsGetHeatIndex()`, `setError()`/`getErrors()`) — not shared queues, since there's no concurrency to guard against.
 
 If real concurrency (e.g. genuinely parallel WiFi handling while doing time-sensitive GPIO work) is ever needed, the only way to get actual FreeRTOS on this hardware is to swap to an ESP32-based board (e.g. Wemos D1 mini32, which is what Neverina runs on) — that decision was explicitly deferred; see the "hardware target" discussion in project history if you need to revisit it.
 
@@ -50,17 +50,19 @@ If real concurrency (e.g. genuinely parallel WiFi handling while doing time-sens
 include/
   pins.h              — DHTPIN / SOLENOID_PIN, #ifndef-guarded, overridable via build_flags
   config.h            — WiFi/OTA credentials (gitignored, not committed — create locally)
+  errors.h            — ErrorFlags bitmask + getErrors()/setError()/clearError()
 src/
+  errors.cpp           — plain uint8_t bitmask; no locking needed, everything runs on one cooperative thread
   nebulizadorv3.ino    — setup()/loop() orchestrator only; wires task modules together
   tasks/
     task_sensors.h/.cpp — owns the DHT11, exposes sensorsGetHeatIndex() / sensorsReadIsValid()
     task_valve.h/.cpp   — proportional-control valve decision + SOLENOID_PIN
-    task_led.h/.cpp     — LED_BUILTIN state machine (boot blink / valve mirror / OTA fast-blink)
+    task_led.h/.cpp     — LED_BUILTIN state machine (heartbeat / error codes / OTA fast-blink)
     task_ota.h/.cpp     — triple-reset detection + ElegantOTA over WiFi
 ```
 
 ### task_sensors
-Owns the `DHT` object and the latest humidity/temperature/heat-index reading. `sensorsTaskLoop(now, intervalMs)` only re-reads the DHT11 once `intervalMs` has elapsed since the last read — the caller (currently `task_valve`, via `valveTaskGetSensorIntervalMs()`) decides that cadence, so the sensor read frequency tracks the same 5min–30min proportional-control interval the valve uses. `hIndex = NAN` on read failure.
+Owns the `DHT` object and the latest humidity/temperature/heat-index reading. `sensorsTaskLoop(now, intervalMs)` only re-reads the DHT11 once `intervalMs` has elapsed since the last read — the caller (currently `task_valve`, via `valveTaskGetSensorIntervalMs()`) decides that cadence, so the sensor read frequency tracks the same 5min–30min proportional-control interval the valve uses. `hIndex = NAN` on read failure, and it calls `setError(ErrorFlags::DHT)` / `clearError(ErrorFlags::DHT)` to report that state to `task_led`.
 
 ### task_valve
 The core decision function, `valveTaskLoop(now, hIndex, sensorValid)`:
@@ -68,12 +70,20 @@ The core decision function, `valveTaskLoop(now, hIndex, sensorValid)`:
 - `hIndex >= MIN_HINDEX_THRESHOLD` (29.8°C) → opens the valve for `VALVE_ACTIVE_TIME_MS` (5s), then computes the next check interval via an ease-out curve mapping `hIndex` within `[29.8, 39]`°C to a delay within `[5min, 30min]` — hotter means more frequent misting.
 - `hIndex < MIN_HINDEX_THRESHOLD` → valve stays closed, next check pinned to 30min.
 
-`controlSolenoidValve()` drives `SOLENOID_PIN` (active-high: `HIGH` = valve open) and calls `ledTaskSetMode()` to mirror state on the LED.
+`controlSolenoidValve()` drives `SOLENOID_PIN` (active-high: `HIGH` = valve open) and calls `ledTaskSetValveActive()` so the LED holds solid on while misting — see `task_led` below for priority vs. the heartbeat/error/OTA displays.
 
 **Pre-existing quirk, carried forward from the pre-task-refactor code:** because `task_sensors`' read cadence is driven by `task_valve`'s own interval, a sensor fault during a "calm" (cold) 30-minute interval won't get a fresh retry read for up to 30 minutes — `valveTaskLoop`'s error branch re-checks the same stale `NAN` every 250ms but doesn't force an earlier re-read. This was true before the refactor too; fixing it is a behavior change, not an architecture one.
 
 ### task_led
-`LedMode` enum (`Idle` / `ValveActive` / `Ota`) set by whichever task owns that concern (`task_valve` sets `Idle`/`ValveActive`, `task_ota` sets `Ota`). `ledTaskLoop(now)` only does work in `Ota` mode (100ms fast blink); the other two modes are static (solid on/off), set once in `ledTaskSetMode()`.
+The built-in LED is the device's only status output, so it multiplexes four things through `ledTaskLoop(now)`, in priority order (each check `return`s before the next, lower-priority one runs):
+1. **OTA mode** — set once via `ledTaskSetOtaMode()` (a dead end, see `task_ota`): fast 100ms blink, overrides everything else.
+2. **Valve active** — `ledTaskSetValveActive(true)`, called from `task_valve`'s `controlSolenoidValve()`: solid on for as long as the valve is open (`VALVE_ACTIVE_TIME_MS`, 5s). Overrides the heartbeat/error display below, but not OTA.
+3. **Healthy heartbeat** — no bits set in `getErrors()`: a single blink every ~5s (`PAUSE_MS`), i.e. the same burst machinery below with a blink count of 1.
+4. **Error codes** — `getErrors()` non-zero: blinks the lowest set bit's code (`__builtin_ctz(errors) + 2`, so bit 0 → 2 blinks, bit 1 → 3, ...) as a burst, then pauses ~5s before repeating. Only the lowest set bit is shown; if more than one error is active simultaneously, others queue behind it silently until it's cleared (there's currently only one error source, `ErrorFlags::DHT`, so this doesn't come up yet — worth revisiting once a second one exists).
+
+Heartbeat and error bursts share one state machine (`s_displayedCode`/`s_step`/`s_lastToggle`): a burst of `blinkCount * 2` on/off steps (`BLINK_MS` each) followed by a `PAUSE_MS` gap. If the error code changes mid-cycle (including healthy ↔ error transitions), the burst restarts immediately rather than waiting out the old cycle, so changes are visible within one tick, not up to 5s late. Coming out of valve-active back to this display also forces a clean restart (`ledTaskSetValveActive(false)` resets `s_displayedCode` to the same sentinel used at boot) rather than resuming a stale mid-burst position from before the valve opened.
+
+Error sources live in `errors.h`/`errors.cpp` (project root, not under `tasks/`, since it's a cross-cutting concern multiple tasks touch) — a plain `ErrorFlags` bitmask with `getErrors()`/`setError()`/`clearError()`. Add new error sources as new bits there; `task_led` derives the blink count automatically, no changes needed on the LED side.
 
 ### task_ota
 Modeled on Neverina's OTA mode, adapted for ESP8266 (`ESP8266WiFi`/`ESP8266WebServer` instead of `WiFi`/`WebServer`, `ESP.getChipId()` instead of `ESP.getEfuseMac()`). No BLE trigger exists in this project (there's no BLE at all), so **the only OTA trigger is a triple power-cycle within 10s**, detected via `ESP_MultiResetDetector` (EEPROM-backed):
