@@ -4,7 +4,7 @@
 
 namespace {
 constexpr uint32_t MAGIC = 0x4E425A31; // "NBZ1"
-constexpr uint16_t SCHEMA_VERSION = 1;
+constexpr uint16_t SCHEMA_VERSION = 2; // v2 adds startMinuteOfDay/endMinuteOfDay; older files are rejected and re-seeded
 constexpr const char *CONFIG_PATH = "/valve_config.bin";
 constexpr const char *CONFIG_TMP_PATH = "/valve_config.bin.tmp";
 

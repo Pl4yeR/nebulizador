@@ -6,6 +6,7 @@
 #include "config.h"
 #include "errors.h"
 #include "task_sensors.h"
+#include "task_time.h"
 #include "task_valve.h"
 
 namespace {
@@ -20,6 +21,9 @@ constexpr const char *TOPIC_CMD_MAX_HINDEX = "homeassistant/nebulizador/number/m
 constexpr const char *TOPIC_CMD_MAX_FREQUENCY = "homeassistant/nebulizador/number/max_frequency_min/set";
 constexpr const char *TOPIC_CMD_MIN_FREQUENCY = "homeassistant/nebulizador/number/min_frequency_min/set";
 constexpr const char *TOPIC_CMD_VALVE_ACTIVE = "homeassistant/nebulizador/number/valve_active_s/set";
+constexpr const char *TOPIC_CMD_MANUAL = "homeassistant/nebulizador/switch/manual/set";
+constexpr const char *TOPIC_CMD_START_TIME = "homeassistant/nebulizador/time/start_time/set";
+constexpr const char *TOPIC_CMD_END_TIME = "homeassistant/nebulizador/time/end_time/set";
 
 constexpr uint32_t MQTT_RECONNECT_INTERVAL_MS = 5000;
 
@@ -44,7 +48,12 @@ const char DISCOVERY_PAYLOAD[] = R"JSON({
     "nebulizador_max_hindex": { "p": "number", "name": "Umbral máximo (sensación térmica)", "command_topic": "homeassistant/nebulizador/number/max_hindex/set", "value_template": "{{ value_json.max_hindex }}", "unit_of_measurement": "°C", "min": 20, "max": 50, "step": 0.1, "mode": "box", "entity_category": "config", "unique_id": "nebulizador_max_hindex" },
     "nebulizador_max_frequency": { "p": "number", "name": "Frecuencia máxima de chequeo", "command_topic": "homeassistant/nebulizador/number/max_frequency_min/set", "value_template": "{{ value_json.max_frequency_min }}", "unit_of_measurement": "min", "min": 1, "max": 120, "step": 1, "mode": "box", "entity_category": "config", "unique_id": "nebulizador_max_frequency" },
     "nebulizador_min_frequency": { "p": "number", "name": "Frecuencia mínima de chequeo", "command_topic": "homeassistant/nebulizador/number/min_frequency_min/set", "value_template": "{{ value_json.min_frequency_min }}", "unit_of_measurement": "min", "min": 1, "max": 60, "step": 1, "mode": "box", "entity_category": "config", "unique_id": "nebulizador_min_frequency" },
-    "nebulizador_valve_active": { "p": "number", "name": "Segundos de válvula abierta", "command_topic": "homeassistant/nebulizador/number/valve_active_s/set", "value_template": "{{ value_json.valve_active_s }}", "unit_of_measurement": "s", "min": 1, "max": 60, "step": 1, "mode": "box", "entity_category": "config", "unique_id": "nebulizador_valve_active" }
+    "nebulizador_valve_active": { "p": "number", "name": "Segundos de válvula abierta", "command_topic": "homeassistant/nebulizador/number/valve_active_s/set", "value_template": "{{ value_json.valve_active_s }}", "unit_of_measurement": "s", "min": 1, "max": 60, "step": 1, "mode": "box", "entity_category": "config", "unique_id": "nebulizador_valve_active" },
+    "nebulizador_next_run": { "p": "sensor", "name": "Próxima ejecución", "device_class": "duration", "unit_of_measurement": "s", "value_template": "{{ value_json.next_run_s }}", "unique_id": "nebulizador_next_run" },
+    "nebulizador_last_run": { "p": "sensor", "name": "Última ejecución", "device_class": "timestamp", "value_template": "{{ value_json.last_run }}", "unique_id": "nebulizador_last_run" },
+    "nebulizador_manual": { "p": "switch", "name": "Disparo manual", "command_topic": "homeassistant/nebulizador/switch/manual/set", "value_template": "{{ value_json.manual }}", "payload_on": "ON", "payload_off": "OFF", "unique_id": "nebulizador_manual" },
+    "nebulizador_start_time": { "p": "time", "name": "Hora de inicio", "command_topic": "homeassistant/nebulizador/time/start_time/set", "value_template": "{{ value_json.start_time }}", "entity_category": "config", "unique_id": "nebulizador_start_time" },
+    "nebulizador_end_time": { "p": "time", "name": "Hora de fin", "command_topic": "homeassistant/nebulizador/time/end_time/set", "value_template": "{{ value_json.end_time }}", "entity_category": "config", "unique_id": "nebulizador_end_time" }
   }
 })JSON";
 
@@ -61,6 +70,9 @@ bool s_lastSensorValid = false;
 float s_lastHeatIndex = NAN;
 bool s_lastValveActive = false;
 uint8_t s_lastErrors = 0xFF;
+unsigned long s_lastCycleStartMs = 0;
+unsigned long s_lastSensorIntervalMs = 0;
+bool s_lastManualActive = false;
 
 String buildStateJson() {
   bool valid = sensorsReadIsValid();
@@ -85,7 +97,37 @@ String buildStateJson() {
   json += String(valveTaskGetMinFrequencyMs() / 60000UL);
   json += ",\"valve_active_s\":";
   json += String(valveTaskGetValveActiveTimeMs() / 1000UL);
-  json += "}";
+  json += ",\"next_run_s\":";
+  json += String(valveTaskGetSensorIntervalMs() / 1000UL);
+  json += ",\"last_run\":";
+  if (timeTaskIsSynced()) {
+    unsigned long elapsedMs = millis() - valveTaskGetCycleStartMs(); // unsigned sub — correct across millis() rollover
+    time_t lastRunEpoch = time(nullptr) - static_cast<time_t>(elapsedMs / 1000UL);
+    char isoBuf[24];
+    timeTaskFormatEpochUtc(lastRunEpoch, isoBuf, sizeof(isoBuf));
+    json += "\"";
+    json += isoBuf;
+    json += "\"";
+  } else {
+    json += "null"; // HA renders a JSON null as 'None' -> the timestamp sensor shows "unknown"
+  }
+  json += ",\"manual\":\"";
+  json += valveTaskManualIsActive() ? "ON" : "OFF";
+  json += "\",\"start_time\":\"";
+  {
+    uint16_t m = valveTaskGetStartMinuteOfDay();
+    char timeBuf[9];
+    snprintf(timeBuf, sizeof(timeBuf), "%02u:%02u:00", m / 60, m % 60);
+    json += timeBuf;
+  }
+  json += "\",\"end_time\":\"";
+  {
+    uint16_t m = valveTaskGetEndMinuteOfDay();
+    char timeBuf[9];
+    snprintf(timeBuf, sizeof(timeBuf), "%02u:%02u:00", m / 60, m % 60);
+    json += timeBuf;
+  }
+  json += "\"}";
   return json;
 }
 
