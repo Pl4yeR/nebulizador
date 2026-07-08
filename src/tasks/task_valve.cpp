@@ -73,7 +73,10 @@ void valveTaskLoop(unsigned long now, float hIndex, bool sensorValid) {
     }
     if (now - s_cycleStartTime >= s_currentCycleDelayMs) {
       Serial.println(F("[VALVE] Error reading sensors. Skipping valve control."));
+      s_cycleStartTime = now;
+      s_currentCycleDelayMs = s_maxFrequencyMs;
     }
+
     return;
   }
 
