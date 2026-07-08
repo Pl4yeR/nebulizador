@@ -190,9 +190,24 @@ void mqttTaskBegin() {
   WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
+  // Power saving. Light Sleep (unlike Modem Sleep) also gates the CPU clock
+  // between DTIM wake windows, not just the radio — the connection stays up,
+  // same as Modem Sleep, just deeper. listenInterval=5 means the radio only
+  // wakes every 5th DTIM beacon, trading HA command latency (roughly
+  // sub-second to ~1s on a typical AP) for lower average draw — acceptable
+  // here since no command needs to be instantaneous. If the connection ever
+  // proves flaky on your AP, drop this toward 1-3 first before disabling.
+  WiFi.setSleepMode(WIFI_LIGHT_SLEEP, 5);
+
+  // ~70% of actual radiated power, not 70% of the raw dBm figure (dBm is
+  // logarithmic — 70% of 20.5 literally would cut real TX power to ~27%).
+  // Device lives on the home LAN with no long-range requirement.
+  WiFi.setOutputPower(19.0f);
+
   s_mqtt.setServer(MQTT_SERVER, MQTT_PORT);
   s_mqtt.setBufferSize(6144); // Discovery payload measures ~4.5KB (16 cmps); ~35% headroom for future entities.
   s_mqtt.setSocketTimeout(5);
+  s_mqtt.setKeepAlive(60); // Default is 15s; state changes already publish immediately regardless of this.
   s_mqtt.setCallback(mqttCallback);
 }
 
