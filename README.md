@@ -85,10 +85,12 @@ In normal operation the board connects to WiFi and to the MQTT broker configured
 | Error | binary_sensor (`problem`) | ON while any `ErrorFlags` bit is set |
 | Código de error | sensor (diagnostic) | raw bitmask, for troubleshooting against `include/errors.h` |
 | Umbral mínimo/máximo (sensación térmica) | number | °C, replaces `MIN_HINDEX_THRESHOLD`/`MAX_HINDEX_THRESHOLD` |
-| Frecuencia mínima/máxima de chequeo | number | minutes, replaces `MIN_FREQUENCY_MS`/`MAX_FREQUENCY_MS` |
+| Frecuencia máxima de chequeo | number | minutes (whole), replaces `MAX_FREQUENCY_MS` |
+| Frecuencia mínima de chequeo | number | minutes, **step 0.25** (15s resolution), replaces `MIN_FREQUENCY_MS` |
 | Segundos de válvula abierta | number | seconds, replaces `VALVE_ACTIVE_TIME_MS` |
-| Próxima ejecución | sensor (duration, s) | segundos hasta el siguiente ciclo automático |
+| Próxima ejecución | sensor (timestamp) | HA la muestra en relativo ("en 5 minutos"); `unknown` sin sincronización NTP |
 | Última ejecución | sensor (timestamp) | `unknown` hasta la primera sincronización NTP (ver más abajo) |
+| Hora del dispositivo | sensor (timestamp, diagnóstico) | reloj interno del dispositivo; útil para confirmar que el NTP funciona |
 | Disparo manual | switch | ver "Disparo manual" más abajo |
 | Hora de inicio / Hora de fin | time (`HH:MM:SS`) | ver "Franja horaria" más abajo |
 

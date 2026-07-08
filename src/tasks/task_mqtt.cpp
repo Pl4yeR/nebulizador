@@ -49,10 +49,11 @@ const char DISCOVERY_PAYLOAD[] = R"JSON({
     "nebulizador_min_hindex": { "p": "number", "name": "Umbral mínimo (sensación térmica)", "command_topic": "homeassistant/nebulizador/number/min_hindex/set", "value_template": "{{ value_json.min_hindex }}", "unit_of_measurement": "°C", "min": 15, "max": 45, "step": 0.1, "mode": "box", "entity_category": "config", "unique_id": "nebulizador_min_hindex" },
     "nebulizador_max_hindex": { "p": "number", "name": "Umbral máximo (sensación térmica)", "command_topic": "homeassistant/nebulizador/number/max_hindex/set", "value_template": "{{ value_json.max_hindex }}", "unit_of_measurement": "°C", "min": 20, "max": 50, "step": 0.1, "mode": "box", "entity_category": "config", "unique_id": "nebulizador_max_hindex" },
     "nebulizador_max_frequency": { "p": "number", "name": "Frecuencia máxima de chequeo", "command_topic": "homeassistant/nebulizador/number/max_frequency_min/set", "value_template": "{{ value_json.max_frequency_min }}", "unit_of_measurement": "min", "min": 1, "max": 120, "step": 1, "mode": "box", "entity_category": "config", "unique_id": "nebulizador_max_frequency" },
-    "nebulizador_min_frequency": { "p": "number", "name": "Frecuencia mínima de chequeo", "command_topic": "homeassistant/nebulizador/number/min_frequency_min/set", "value_template": "{{ value_json.min_frequency_min }}", "unit_of_measurement": "min", "min": 1, "max": 60, "step": 1, "mode": "box", "entity_category": "config", "unique_id": "nebulizador_min_frequency" },
+    "nebulizador_min_frequency": { "p": "number", "name": "Frecuencia mínima de chequeo", "command_topic": "homeassistant/nebulizador/number/min_frequency_min/set", "value_template": "{{ value_json.min_frequency_min }}", "unit_of_measurement": "min", "min": 0.25, "max": 60, "step": 0.25, "mode": "box", "entity_category": "config", "unique_id": "nebulizador_min_frequency" },
     "nebulizador_valve_active": { "p": "number", "name": "Segundos de válvula abierta", "command_topic": "homeassistant/nebulizador/number/valve_active_s/set", "value_template": "{{ value_json.valve_active_s }}", "unit_of_measurement": "s", "min": 1, "max": 60, "step": 1, "mode": "box", "entity_category": "config", "unique_id": "nebulizador_valve_active" },
-    "nebulizador_next_run": { "p": "sensor", "name": "Próxima ejecución", "device_class": "duration", "unit_of_measurement": "s", "value_template": "{{ value_json.next_run_s }}", "unique_id": "nebulizador_next_run" },
+    "nebulizador_next_run": { "p": "sensor", "name": "Próxima ejecución", "device_class": "timestamp", "value_template": "{{ value_json.next_run }}", "unique_id": "nebulizador_next_run" },
     "nebulizador_last_run": { "p": "sensor", "name": "Última ejecución", "device_class": "timestamp", "value_template": "{{ value_json.last_run }}", "unique_id": "nebulizador_last_run" },
+    "nebulizador_device_time": { "p": "sensor", "name": "Hora del dispositivo", "device_class": "timestamp", "entity_category": "diagnostic", "value_template": "{{ value_json.device_time }}", "unique_id": "nebulizador_device_time" },
     "nebulizador_manual": { "p": "switch", "name": "Disparo manual", "command_topic": "homeassistant/nebulizador/switch/manual/set", "value_template": "{{ value_json.manual }}", "payload_on": "ON", "payload_off": "OFF", "unique_id": "nebulizador_manual" },
     "nebulizador_start_time": { "p": "time", "name": "Hora de inicio", "command_topic": "homeassistant/nebulizador/time/start_time/set", "value_template": "{{ value_json.start_time }}", "entity_category": "config", "unique_id": "nebulizador_start_time" },
     "nebulizador_end_time": { "p": "time", "name": "Hora de fin", "command_topic": "homeassistant/nebulizador/time/end_time/set", "value_template": "{{ value_json.end_time }}", "entity_category": "config", "unique_id": "nebulizador_end_time" }
@@ -96,11 +97,27 @@ String buildStateJson() {
   json += ",\"max_frequency_min\":";
   json += String(valveTaskGetMaxFrequencyMs() / 60000UL);
   json += ",\"min_frequency_min\":";
-  json += String(valveTaskGetMinFrequencyMs() / 60000UL);
+  json += String(valveTaskGetMinFrequencyMs() / 60000.0f, 2); // 2 decimals -> quarter-minute (15s) resolution
   json += ",\"valve_active_s\":";
   json += String(valveTaskGetValveActiveTimeMs() / 1000UL);
-  json += ",\"next_run_s\":";
-  json += String(valveTaskGetSensorIntervalMs() / 1000UL);
+  json += ",\"next_run\":";
+  if (timeTaskIsSynced()) {
+    // targetMs may be "in the past" if the automatic cycle is overdue (e.g. a
+    // schedule window just reopened) — clamp to "now" rather than emit a
+    // stale/negative ETA; still unsigned-subtraction-safe across millis() rollover.
+    unsigned long targetMs = valveTaskGetCycleStartMs() + valveTaskGetSensorIntervalMs();
+    long remainingMs = (long)(targetMs - millis());
+    if (remainingMs < 0)
+      remainingMs = 0;
+    time_t nextRunEpoch = time(nullptr) + static_cast<time_t>(remainingMs / 1000);
+    char isoBuf[24];
+    timeTaskFormatEpochUtc(nextRunEpoch, isoBuf, sizeof(isoBuf));
+    json += "\"";
+    json += isoBuf;
+    json += "\"";
+  } else {
+    json += "null"; // HA renders a JSON null as 'None' -> the timestamp sensor shows "unknown"
+  }
   json += ",\"last_run\":";
   if (timeTaskIsSynced()) {
     unsigned long elapsedMs = millis() - valveTaskGetCycleStartMs(); // unsigned sub — correct across millis() rollover
@@ -112,6 +129,16 @@ String buildStateJson() {
     json += "\"";
   } else {
     json += "null"; // HA renders a JSON null as 'None' -> the timestamp sensor shows "unknown"
+  }
+  json += ",\"device_time\":";
+  if (timeTaskIsSynced()) {
+    char isoBuf[24];
+    timeTaskFormatEpochUtc(time(nullptr), isoBuf, sizeof(isoBuf));
+    json += "\"";
+    json += isoBuf;
+    json += "\"";
+  } else {
+    json += "null";
   }
   json += ",\"manual\":\"";
   json += valveTaskManualIsActive() ? "ON" : "OFF";
@@ -155,7 +182,9 @@ void mqttCallback(char *topic, uint8_t *payload, unsigned int length) {
   } else if (t == TOPIC_CMD_MAX_FREQUENCY) {
     valveTaskSetMaxFrequencyMs(strtoul(buf, nullptr, 10) * 60000UL);
   } else if (t == TOPIC_CMD_MIN_FREQUENCY) {
-    valveTaskSetMinFrequencyMs(strtoul(buf, nullptr, 10) * 60000UL);
+    // Quarter-minute resolution (15s steps) — atof, not strtoul, so "0.25" isn't
+    // silently truncated to "0"; +0.5f rounds instead of floors away float error.
+    valveTaskSetMinFrequencyMs((unsigned long)(atof(buf) * 60000.0f + 0.5f));
   } else if (t == TOPIC_CMD_VALVE_ACTIVE) {
     valveTaskSetValveActiveTimeMs(strtoul(buf, nullptr, 10) * 1000UL);
   } else if (t == TOPIC_CMD_MANUAL) {
@@ -205,7 +234,7 @@ void mqttTaskBegin() {
   WiFi.setOutputPower(19.0f);
 
   s_mqtt.setServer(MQTT_SERVER, MQTT_PORT);
-  s_mqtt.setBufferSize(6144); // Discovery payload measures ~4.5KB (16 cmps); ~35% headroom for future entities.
+  s_mqtt.setBufferSize(6144); // Discovery payload measures ~4.9KB (17 cmps); ~25% headroom for future entities.
   s_mqtt.setSocketTimeout(5);
   s_mqtt.setKeepAlive(60); // Default is 15s; state changes already publish immediately regardless of this.
   s_mqtt.setCallback(mqttCallback);
