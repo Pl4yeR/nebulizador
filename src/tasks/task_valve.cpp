@@ -71,10 +71,10 @@ void valveTaskLoop(unsigned long now, float hIndex, bool sensorValid) {
       Serial.println(F("[VALVE] Error reading sensors. Deactivating solenoid valve."));
       controlSolenoidValve(false);
     }
-    if (now - s_cycleStartTime >= s_currentCycleDelayMs) {
+    if (now - s_cycleStartTime >= s_currentCycleDelayMs)
+    {
       Serial.println(F("[VALVE] Error reading sensors. Skipping valve control."));
-      s_cycleStartTime = now;
-      s_currentCycleDelayMs = s_maxFrequencyMs;
+      s_currentCycleDelayMs = 5000; // Retry in 5s
     }
 
     return;
