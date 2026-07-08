@@ -9,6 +9,10 @@ struct ValveConfig {
   uint32_t maxFrequencyMs;
   uint32_t minFrequencyMs;
   uint32_t valveActiveTimeMs;
+  // Minutes since midnight (0-1439). start == end means the schedule is
+  // disabled (valve control runs 24h) — see task_valve.cpp's scheduleAllowsNow().
+  uint16_t startMinuteOfDay;
+  uint16_t endMinuteOfDay;
 };
 
 // Mounts LittleFS lazily on first use. Returns false if no valid config file

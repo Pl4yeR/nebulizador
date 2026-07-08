@@ -3,6 +3,7 @@
 #include "config_store.h"
 #include "pins.h"
 #include "task_led.h"
+#include "task_time.h"
 
 namespace {
 // Proportional control: hIndex within [s_minHIndexThreshold, s_maxHIndexThreshold]
@@ -16,16 +17,30 @@ constexpr float DEFAULT_MAX_HINDEX_THRESHOLD = 39.0f;
 constexpr unsigned long DEFAULT_MAX_FREQUENCY_MS = 1800000; // 30 min
 constexpr unsigned long DEFAULT_MIN_FREQUENCY_MS = 300000;  // 5 min
 constexpr unsigned long DEFAULT_VALVE_ACTIVE_TIME_MS = 5000; // 5 s
+// 0/0 means "no schedule" — scheduleAllowsNow() treats start == end as always-on.
+constexpr uint16_t DEFAULT_START_MINUTE_OF_DAY = 0;
+constexpr uint16_t DEFAULT_END_MINUTE_OF_DAY = 0;
 
 float s_minHIndexThreshold = DEFAULT_MIN_HINDEX_THRESHOLD;
 float s_maxHIndexThreshold = DEFAULT_MAX_HINDEX_THRESHOLD;
 unsigned long s_maxFrequencyMs = DEFAULT_MAX_FREQUENCY_MS;
 unsigned long s_minFrequencyMs = DEFAULT_MIN_FREQUENCY_MS;
 unsigned long s_valveActiveTimeMs = DEFAULT_VALVE_ACTIVE_TIME_MS;
+uint16_t s_startMinuteOfDay = DEFAULT_START_MINUTE_OF_DAY;
+uint16_t s_endMinuteOfDay = DEFAULT_END_MINUTE_OF_DAY;
 
 unsigned long s_cycleStartTime = 0;
 unsigned long s_currentCycleDelayMs = 0; // 0 forces an immediate first check at boot
 bool s_isValveActive = false;
+
+// Manual override (task_mqtt's "switch"): not persisted — a reboot always
+// comes up with no manual cycle in progress, regardless of what was
+// happening before the restart.
+bool s_manualActive = false;
+unsigned long s_manualStartTime = 0;
+
+// Edge-triggered logging only — scheduleAllowsNow() itself has no side effects.
+bool s_scheduleWasBlocking = false;
 
 void controlSolenoidValve(bool activate) {
   s_isValveActive = activate;
@@ -34,7 +49,7 @@ void controlSolenoidValve(bool activate) {
   Serial.println(activate ? F("[VALVE] Solenoid valve activated.") : F("[VALVE] Solenoid valve deactivated."));
 }
 
-// Applies the 5 in-memory values as a ValveConfig and persists them. Called
+// Applies the 7 in-memory values as a ValveConfig and persists them. Called
 // after every setter and once at boot if no config file existed yet.
 bool persistConfig() {
   ValveConfig cfg;
@@ -43,7 +58,24 @@ bool persistConfig() {
   cfg.maxFrequencyMs = s_maxFrequencyMs;
   cfg.minFrequencyMs = s_minFrequencyMs;
   cfg.valveActiveTimeMs = s_valveActiveTimeMs;
+  cfg.startMinuteOfDay = s_startMinuteOfDay;
+  cfg.endMinuteOfDay = s_endMinuteOfDay;
   return configStoreSaveValveConfig(cfg);
+}
+
+// start == end disables the schedule (24h operation). Without a synced clock
+// there's no way to evaluate the window, so we run unrestricted rather than
+// blocking misting indefinitely — same "degrade to always-on" rule as a
+// missing schedule. A window that crosses midnight (start > end) is
+// interpreted as "from start until end the next day".
+bool scheduleAllowsNow() {
+  if (s_startMinuteOfDay == s_endMinuteOfDay || !timeTaskIsSynced())
+    return true;
+
+  int m = timeTaskMinutesOfDay();
+  if (s_startMinuteOfDay <= s_endMinuteOfDay)
+    return m >= s_startMinuteOfDay && m <= s_endMinuteOfDay;
+  return m >= s_startMinuteOfDay || m <= s_endMinuteOfDay;
 }
 } // namespace
 
@@ -55,6 +87,8 @@ void valveTaskBegin() {
     s_maxFrequencyMs = cfg.maxFrequencyMs;
     s_minFrequencyMs = cfg.minFrequencyMs;
     s_valveActiveTimeMs = cfg.valveActiveTimeMs;
+    s_startMinuteOfDay = cfg.startMinuteOfDay;
+    s_endMinuteOfDay = cfg.endMinuteOfDay;
     Serial.println(F("[VALVE] Loaded persisted config."));
   } else {
     Serial.println(F("[VALVE] No persisted config — seeding defaults."));
@@ -66,6 +100,36 @@ void valveTaskBegin() {
 }
 
 void valveTaskLoop(unsigned long now, float hIndex, bool sensorValid) {
+  // Manual override has priority over everything else, including an invalid
+  // sensor reading — it's an explicit user action, not a control decision.
+  // Automatic cycle timers are left untouched (not evaluated) while it runs.
+  if (s_manualActive) {
+    if (now - s_manualStartTime >= s_valveActiveTimeMs) {
+      Serial.println(F("[VALVE] Manual cycle finished."));
+      controlSolenoidValve(false);
+      s_manualActive = false;
+    }
+    return;
+  }
+
+  if (!scheduleAllowsNow()) {
+    if (s_isValveActive) {
+      Serial.println(F("[VALVE] Outside allowed schedule. Deactivating solenoid valve."));
+      controlSolenoidValve(false);
+    }
+    if (!s_scheduleWasBlocking) {
+      Serial.println(F("[VALVE] Outside schedule window — automatic control suspended."));
+      s_scheduleWasBlocking = true;
+    }
+    // Cycle timers stay frozen while blocked, so the moment the window opens
+    // again the current cycle reads as already-elapsed and re-evaluates immediately.
+    return;
+  }
+  if (s_scheduleWasBlocking) {
+    Serial.println(F("[VALVE] Back within schedule window — automatic control resumed."));
+    s_scheduleWasBlocking = false;
+  }
+
   if (!sensorValid) {
     if (s_isValveActive) {
       Serial.println(F("[VALVE] Error reading sensors. Deactivating solenoid valve."));
@@ -123,7 +187,27 @@ unsigned long valveTaskGetSensorIntervalMs() { return s_currentCycleDelayMs; }
 
 bool valveTaskIsActive() { return s_isValveActive; }
 
-void valveTaskForceClose() { controlSolenoidValve(false); }
+void valveTaskForceClose() {
+  s_manualActive = false;
+  controlSolenoidValve(false);
+}
+
+unsigned long valveTaskGetCycleStartMs() { return s_cycleStartTime; }
+
+bool valveTaskManualIsActive() { return s_manualActive; }
+
+void valveTaskSetManual(bool on) {
+  if (on) {
+    s_manualActive = true;
+    s_manualStartTime = millis();
+    Serial.println(F("[VALVE] Manual cycle started."));
+    controlSolenoidValve(true);
+  } else if (s_manualActive) {
+    s_manualActive = false;
+    Serial.println(F("[VALVE] Manual cycle cancelled."));
+    controlSolenoidValve(false);
+  }
+}
 
 float valveTaskGetMinHIndexThreshold() { return s_minHIndexThreshold; }
 
@@ -134,6 +218,10 @@ unsigned long valveTaskGetMaxFrequencyMs() { return s_maxFrequencyMs; }
 unsigned long valveTaskGetMinFrequencyMs() { return s_minFrequencyMs; }
 
 unsigned long valveTaskGetValveActiveTimeMs() { return s_valveActiveTimeMs; }
+
+uint16_t valveTaskGetStartMinuteOfDay() { return s_startMinuteOfDay; }
+
+uint16_t valveTaskGetEndMinuteOfDay() { return s_endMinuteOfDay; }
 
 bool valveTaskSetMinHIndexThreshold(float celsius) {
   s_minHIndexThreshold = constrain(celsius, 15.0f, min(45.0f, s_maxHIndexThreshold - 0.1f));
@@ -157,5 +245,15 @@ bool valveTaskSetMinFrequencyMs(unsigned long ms) {
 
 bool valveTaskSetValveActiveTimeMs(unsigned long ms) {
   s_valveActiveTimeMs = constrain(ms, 500UL, 60000UL);
+  return persistConfig();
+}
+
+bool valveTaskSetStartMinuteOfDay(uint16_t minuteOfDay) {
+  s_startMinuteOfDay = constrain(minuteOfDay, 0, 1439);
+  return persistConfig();
+}
+
+bool valveTaskSetEndMinuteOfDay(uint16_t minuteOfDay) {
+  s_endMinuteOfDay = constrain(minuteOfDay, 0, 1439);
   return persistConfig();
 }
