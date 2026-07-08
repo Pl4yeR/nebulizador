@@ -87,8 +87,24 @@ In normal operation the board connects to WiFi and to the MQTT broker configured
 | Umbral mínimo/máximo (sensación térmica) | number | °C, replaces `MIN_HINDEX_THRESHOLD`/`MAX_HINDEX_THRESHOLD` |
 | Frecuencia mínima/máxima de chequeo | number | minutes, replaces `MIN_FREQUENCY_MS`/`MAX_FREQUENCY_MS` |
 | Segundos de válvula abierta | number | seconds, replaces `VALVE_ACTIVE_TIME_MS` |
+| Próxima ejecución | sensor (duration, s) | segundos hasta el siguiente ciclo automático |
+| Última ejecución | sensor (timestamp) | `unknown` hasta la primera sincronización NTP (ver más abajo) |
+| Disparo manual | switch | ver "Disparo manual" más abajo |
+| Hora de inicio / Hora de fin | time (`HH:MM:SS`) | ver "Franja horaria" más abajo |
 
-Changing any of the five `number` entities updates the running firmware immediately **and persists across reboots** (stored in LittleFS via `src/config_store.cpp`) — the device re-publishes its actual (possibly clamped) value back to HA right after applying it, and again on every boot/reconnect, so HA never shows a stale value.
+Changing any of the `number`/`time` entities, or the manual switch, updates the running firmware immediately **and persists across reboots** where noted (stored in LittleFS via `src/config_store.cpp`) — the device re-publishes its actual (possibly clamped) value back to HA right after applying it, and again on every boot/reconnect, so HA never shows a stale value.
+
+### Sincronización horaria (NTP)
+
+El dispositivo sincroniza su reloj por NTP (zona horaria `Europe/Madrid` por defecto, override con el build flag `TIME_TZ`) y se resincroniza automáticamente cada 60 minutos mientras haya WiFi. **Si la primera sincronización falla** (sin WiFi, servidor NTP inalcanzable, etc.) el dispositivo sigue funcionando exactamente igual que sin esta función — control 24h, franja horaria ignorada — y la entidad *Última ejecución* se queda en `unknown`. Una vez lograda la primera sincronización, fallos de resincronización posteriores no afectan al funcionamiento: el reloj sigue avanzando por sí solo.
+
+### Disparo manual
+
+El switch *Disparo manual* abre la válvula durante `valve_active_s` segundos y **se apaga solo** en HA al terminar — no hace falta apagarlo a mano (aunque hacerlo cierra la válvula antes de tiempo). Tiene prioridad sobre cualquier otra lógica, incluido un fallo de lectura del sensor: funciona siempre que se solicite.
+
+### Franja horaria
+
+*Hora de inicio* y *Hora de fin* delimitan cuándo puede actuar el control **automático** (el disparo manual no se ve afectado). Si ambas coinciden, la franja está deshabilitada y el sistema funciona las 24h — igual que si nunca se hubiera configurado. Una franja donde la hora de inicio es posterior a la de fin (p.ej. 20:00–06:00) se interpreta como un cruce de medianoche: "desde las 20:00 hasta las 06:00 del día siguiente". Sin sincronización NTP la franja se ignora por completo (ver arriba).
 
 ## OTA updates
 
@@ -124,7 +140,7 @@ Nuevos errores se añaden como bits adicionales en [include/errors.h](include/er
 
 ## Funcionamiento
 
-- Cada 250ms el `loop()` principal llama a los "tasks" de sensores, válvula, MQTT, LED y OTA — ver [CLAUDE.md](CLAUDE.md) para el detalle de cada módulo.
+- Cada 250ms el `loop()` principal llama a los "tasks" de sensores, válvula, MQTT, LED, OTA y hora (NTP) — ver [CLAUDE.md](CLAUDE.md) para el detalle de cada módulo.
 - Si la sensación térmica (`hIndex`) es inferior al umbral mínimo (29.8°C por defecto, configurable desde Home Assistant), la válvula permanece cerrada y el sistema revisa de nuevo cada `max_frequency_min` (30min por defecto).
 - Si `hIndex` alcanza o supera el umbral, la válvula se abre `valve_active_s` segundos (5s por defecto) y el intervalo hasta la siguiente comprobación se calcula proporcionalmente entre `min_frequency_min` y `max_frequency_min` (5–30min por defecto) mediante una curva ease-out: cuanto más calor, más frecuente la nebulización.
 

@@ -8,6 +8,7 @@
 #include "tasks/task_mqtt.h"
 #include "tasks/task_ota.h"
 #include "tasks/task_sensors.h"
+#include "tasks/task_time.h"
 #include "tasks/task_valve.h"
 
 const unsigned int LOOP_DELAY_MS = 250; // Delay pacing the main loop
@@ -26,6 +27,7 @@ void setup() {
   }
 
   mqttTaskBegin(); // Brings WiFi up for normal operation — MQTT needs it always-on now
+  timeTaskBegin();
   Serial.println(F("[MAIN] Nebulizador ready."));
 }
 
@@ -37,6 +39,7 @@ void loop() {
   mqttTaskLoop(now);
   ledTaskLoop(now);
   otaTaskLoop();
+  timeTaskLoop(now);
 
   delay(LOOP_DELAY_MS);
 }

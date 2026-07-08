@@ -2,6 +2,8 @@
 
 #include <ESP8266WiFi.h>
 #include <PubSubClient.h>
+#include <stdio.h>
+#include <string.h>
 
 #include "config.h"
 #include "errors.h"
@@ -116,15 +118,17 @@ String buildStateJson() {
   json += "\",\"start_time\":\"";
   {
     uint16_t m = valveTaskGetStartMinuteOfDay();
-    char timeBuf[9];
-    snprintf(timeBuf, sizeof(timeBuf), "%02u:%02u:00", m / 60, m % 60);
+    uint8_t hh = m / 60, mm = m % 60; // bounded (0-23/0-59) — narrows snprintf's worst-case width estimate
+    char timeBuf[12];
+    snprintf(timeBuf, sizeof(timeBuf), "%02hhu:%02hhu:00", hh, mm);
     json += timeBuf;
   }
   json += "\",\"end_time\":\"";
   {
     uint16_t m = valveTaskGetEndMinuteOfDay();
-    char timeBuf[9];
-    snprintf(timeBuf, sizeof(timeBuf), "%02u:%02u:00", m / 60, m % 60);
+    uint8_t hh = m / 60, mm = m % 60;
+    char timeBuf[12];
+    snprintf(timeBuf, sizeof(timeBuf), "%02hhu:%02hhu:00", hh, mm);
     json += timeBuf;
   }
   json += "\"}";
@@ -154,6 +158,22 @@ void mqttCallback(char *topic, uint8_t *payload, unsigned int length) {
     valveTaskSetMinFrequencyMs(strtoul(buf, nullptr, 10) * 60000UL);
   } else if (t == TOPIC_CMD_VALVE_ACTIVE) {
     valveTaskSetValveActiveTimeMs(strtoul(buf, nullptr, 10) * 1000UL);
+  } else if (t == TOPIC_CMD_MANUAL) {
+    valveTaskSetManual(strcmp(buf, "ON") == 0);
+  } else if (t == TOPIC_CMD_START_TIME) {
+    unsigned int hh, mm;
+    if (sscanf(buf, "%2u:%2u", &hh, &mm) == 2 && hh < 24 && mm < 60) {
+      valveTaskSetStartMinuteOfDay(hh * 60 + mm);
+    } else {
+      Serial.println(F("[MQTT] Invalid start_time payload — ignoring."));
+    }
+  } else if (t == TOPIC_CMD_END_TIME) {
+    unsigned int hh, mm;
+    if (sscanf(buf, "%2u:%2u", &hh, &mm) == 2 && hh < 24 && mm < 60) {
+      valveTaskSetEndMinuteOfDay(hh * 60 + mm);
+    } else {
+      Serial.println(F("[MQTT] Invalid end_time payload — ignoring."));
+    }
   } else {
     handled = false;
   }
@@ -171,7 +191,7 @@ void mqttTaskBegin() {
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
   s_mqtt.setServer(MQTT_SERVER, MQTT_PORT);
-  s_mqtt.setBufferSize(5120); // Discovery payload measures ~3.5KB; ~45% headroom for future entities.
+  s_mqtt.setBufferSize(6144); // Discovery payload measures ~4.5KB (16 cmps); ~35% headroom for future entities.
   s_mqtt.setSocketTimeout(5);
   s_mqtt.setCallback(mqttCallback);
 }
@@ -205,11 +225,17 @@ void mqttTaskLoop(unsigned long now) {
     s_mqtt.subscribe(TOPIC_CMD_MAX_FREQUENCY);
     s_mqtt.subscribe(TOPIC_CMD_MIN_FREQUENCY);
     s_mqtt.subscribe(TOPIC_CMD_VALVE_ACTIVE);
+    s_mqtt.subscribe(TOPIC_CMD_MANUAL);
+    s_mqtt.subscribe(TOPIC_CMD_START_TIME);
+    s_mqtt.subscribe(TOPIC_CMD_END_TIME);
 
     s_lastSensorValid = sensorsReadIsValid();
     s_lastHeatIndex = sensorsGetHeatIndex();
     s_lastValveActive = valveTaskIsActive();
     s_lastErrors = getErrors();
+    s_lastCycleStartMs = valveTaskGetCycleStartMs();
+    s_lastSensorIntervalMs = valveTaskGetSensorIntervalMs();
+    s_lastManualActive = valveTaskManualIsActive();
     return;
   }
 
@@ -219,9 +245,14 @@ void mqttTaskLoop(unsigned long now) {
   float heatIndex = sensorsGetHeatIndex();
   bool valveActive = valveTaskIsActive();
   uint8_t errors = getErrors();
+  unsigned long cycleStartMs = valveTaskGetCycleStartMs();
+  unsigned long sensorIntervalMs = valveTaskGetSensorIntervalMs();
+  bool manualActive = valveTaskManualIsActive();
 
   bool changed = (sensorValid != s_lastSensorValid) || (sensorValid && heatIndex != s_lastHeatIndex) ||
-                 (valveActive != s_lastValveActive) || (errors != s_lastErrors);
+                 (valveActive != s_lastValveActive) || (errors != s_lastErrors) ||
+                 (cycleStartMs != s_lastCycleStartMs) || (sensorIntervalMs != s_lastSensorIntervalMs) ||
+                 (manualActive != s_lastManualActive);
 
   if (changed) {
     publishState();
@@ -229,6 +260,9 @@ void mqttTaskLoop(unsigned long now) {
     s_lastHeatIndex = heatIndex;
     s_lastValveActive = valveActive;
     s_lastErrors = errors;
+    s_lastCycleStartMs = cycleStartMs;
+    s_lastSensorIntervalMs = sensorIntervalMs;
+    s_lastManualActive = manualActive;
   }
 }
 
