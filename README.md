@@ -1,129 +1,151 @@
 # Water Nebulization System
 
 ## Project Overview
-This project implements a water nebulization system using an Arduino. The system utilizes a DHT11 sensor for monitoring temperature and humidity, a solenoid valve for controlling water flow, a MOSFET for power management, and LED indicators for status notifications.
+This project implements a water nebulization system on a Wemos D1 mini (ESP8266). An ambient sensor (DHT11 or SHT30 — swappable, see below) measures temperature and humidity; the firmware computes a heat index from those readings and opens a solenoid valve (via a MOSFET trigger module) when it's hot enough, using a non-blocking, proportional-control loop — the hotter it is, the more frequently the valve fires.
+
+The firmware is split into small, single-purpose "task" modules (sensors, valve, status LED, OTA, MQTT/Home Assistant) that are each polled cooperatively from a single `loop()` — see [CLAUDE.md](CLAUDE.md) for why this isn't real FreeRTOS on this chip.
 
 ## Components Used
-- **Arduino Board**: The microcontroller that runs the code.
-- **DHT11 Sensor**: Measures temperature and humidity.
+- **Wemos D1 mini (ESP8266)**: The microcontroller that runs the code.
+- **DHT11 or SHT30 sensor**: Measures temperature and humidity — pick one shield, select the matching PlatformIO environment (see below).
 - **Solenoid Valve**: Controls the flow of water in the nebulization system.
-- **MOSFET**: Used to switch the solenoid valve on and off.
-- **LED Indicators**: Provide visual feedback on system status.
+- **MOSFET Trigger Switch Drive Module**: Switches the solenoid valve on and off.
+- **Built-in LED**: The only status indicator — heartbeat blink when healthy, an error blink code when something's wrong, solid on while the valve is misting, and a fast blink in OTA mode.
+
+## Sensor: DHT11 or SHT30
+
+Two PlatformIO environments in `platformio.ini` share everything except which sensor backend gets compiled in (`src/tasks/task_sensors_dht.cpp` vs. `src/tasks/task_sensors_sht30.cpp` — both implement the same `task_sensors.h` interface, so nothing else in the firmware needs to know which one is active):
+
+| Environment | Sensor | Interface |
+|---|---|---|
+| `d1_mini_dht11` (default) | DHT11 | 1-wire, `DHTPIN` |
+| `d1_mini_sht30` | SHT30 | I2C, `SDA_PIN`/`SCL_PIN` |
+
+```
+pio run                       # builds d1_mini (DHT11) — the default
+pio run -e d1_mini_sht30       # builds the SHT30 variant instead
+pio run -e d1_mini_sht30 -t upload
+```
+
+Both sensor reads are non-blocking. The SHT30 backend uses the `robtillaart/SHT31` library's async interface (`requestData()` fires the measurement, `dataReady()` is a pure timing check, `readData()` reads the result once ready) instead of its plain blocking `read()`, so a ~15ms measurement never stalls the valve/LED/MQTT/OTA loop.
+
+## Pin map
+
+| Role | Pin | Notes |
+|---|---|---|
+| DHT11 data | `D5` | `env:d1_mini_dht11` only. **Physically rewired off the shield's factory `D4`** — see note below |
+| SHT30 SDA / SCL | `D2` / `D6` (default) | `env:d1_mini_sht30` only. Configurable, see below |
+| Solenoid valve control | `D1` (default) | Configurable, see below. Active-high (`HIGH` = valve open) |
+| Status LED | `LED_BUILTIN` (`D4` / GPIO2) | Fixed by the board, active-low |
+
+The shields' factory pins are DHT11 → `D4`, SHT30 → SCL `D1`/SDA `D2` (Wemos' own SHT30 Shield default), Relay → `D1` (Wemos' own Relay Shield default), and [include/pins.h](include/pins.h) documents them as its bare fallbacks. [platformio.ini](platformio.ini) then resolves the two collisions those factory pins carry: `SCL` moves to `D6` for the SHT30 build (`SCL=D1` would collide with `SOLENOID_PIN=D1`), and `DHTPIN` moves to `D5` (see below). Override any of these the same way if you wire it differently:
+
+```ini
+build_flags =
+    -D DHTPIN=D6
+    -D SOLENOID_PIN=D2
+```
+
+**Why the DHT11 can't stay on its factory `D4`**: that pin is also the built-in status LED (GPIO2, active-low), and the DHT11 hardware-interprets any ≥18ms LOW on its data line as a "start reading" signal — so every LED blink (heartbeat, error codes, valve indicator, OTA) would trigger a phantom sensor read and fight the sensor electrically on the line. There is no software workaround (any visible blink is a valid start signal; ESPHome outright refuses to compile this pin sharing). The fix, as in the community references collected in [CLAUDE.md](CLAUDE.md), is physical: the shield's data line is rewired to `D5`, and a compile-time guard (`static_assert` in `task_sensors_dht.cpp`) rejects any build where `DHTPIN` lands back on the LED pin.
 
 ## Setup Instructions
+
 1. **Hardware Connections**:
-   - Connect the DHT11 sensor to the designated pins on the Arduino.
-   - Wire the solenoid valve to the MOSFET, ensuring proper power supply.
-   - Connect the LED indicators to the appropriate pins.
+   - DHT11: connect the data pin to `D5` (or your configured `DHTPIN` — never `D4`/the LED pin, the build will refuse it).
+   - SHT30: connect SDA/SCL to `D2`/`D6` (or your configured `SDA_PIN`/`SCL_PIN`).
+   - Wire the solenoid valve to the MOSFET module, and the module's trigger input to `D1` (or your configured `SOLENOID_PIN`).
+2. **WiFi/OTA/MQTT credentials**: create `include/config.h` (not committed, see `include/.gitignore`):
+   ```cpp
+   #define WIFI_SSID       "your-ssid"
+   #define WIFI_PASSWORD   "your-password"
+   #define OTA_AP_PASSWORD "your-ota-password" // min 8 characters
 
-2. **Software Installation**:
-   - Install the Arduino IDE on your computer.
-   - Ensure you have the necessary libraries for the DHT11 sensor.
+   #define MQTT_SERVER     "your-mqtt-broker-host-or-ip"
+   #define MQTT_PORT       1883
+   #define MQTT_USER       "your-mqtt-user"
+   #define MQTT_PASSWORD   "your-mqtt-password"
+   ```
+3. **Build / flash** (PlatformIO):
+   ```
+   pio run                       # compile (env:d1_mini_dht11, DHT11, by default)
+   pio run -e d1_mini_sht30       # or compile the SHT30 variant
+   pio run -t upload             # compile + flash the default env
+   pio device monitor            # serial monitor, 9600 baud
+   ```
+   `lib_deps` pulls the DHT sensor library (or `robtillaart/SHT31` for the SHT30 env), ElegantOTA, ESP_MultiResetDetector and PubSubClient from the PlatformIO registry automatically.
 
-3. **Uploading the Code**:
-   - Open the `nebulizadorv3.ino` file in the Arduino IDE.
-   - Select the correct board and port from the Tools menu.
-   - Upload the sketch to the Arduino.
+## Home Assistant (MQTT)
 
-4. **Running the Project**:
-   - Once uploaded, the system will initialize and begin monitoring temperature and humidity.
-   - The solenoid valve will be controlled based on the logic defined in the code.
+In normal operation the board connects to WiFi and to the MQTT broker configured in `config.h`, and registers itself in Home Assistant automatically via [MQTT discovery](https://www.home-assistant.io/integrations/mqtt/) — no YAML editing needed, the device just appears under **Settings → Devices & services → MQTT** as "Nebulizador" with these entities:
 
-## Future Enhancements
-- Implement additional sensors for more precise control.
-- Add a user interface for easier interaction.
-- Integrate data logging for monitoring environmental conditions over time.
+| Entity | Type | Notes |
+|---|---|---|
+| Temperatura / Humedad / Sensación térmica | sensor | `unknown` while the sensor read is failing |
+| Válvula | binary_sensor | ON while misting |
+| Error | binary_sensor (`problem`) | ON while any `ErrorFlags` bit is set |
+| Código de error | sensor (diagnostic) | raw bitmask, for troubleshooting against `include/errors.h` |
+| Umbral mínimo/máximo (sensación térmica) | number | °C, replaces `MIN_HINDEX_THRESHOLD`/`MAX_HINDEX_THRESHOLD` |
+| Frecuencia máxima de chequeo | number | minutes (whole), replaces `MAX_FREQUENCY_MS` |
+| Frecuencia mínima de chequeo | number | minutes, **step 0.25** (15s resolution), replaces `MIN_FREQUENCY_MS` |
+| Segundos de válvula abierta | number | seconds, replaces `VALVE_ACTIVE_TIME_MS` |
+| Próxima ejecución | sensor (timestamp) | HA la muestra en relativo ("en 5 minutos"); `unknown` sin sincronización NTP |
+| Última ejecución | sensor (timestamp) | `unknown` hasta la primera sincronización NTP (ver más abajo) |
+| Hora del dispositivo | sensor (timestamp, diagnóstico) | reloj interno del dispositivo; útil para confirmar que el NTP funciona |
+| Disparo manual | switch | ver "Disparo manual" más abajo |
+| Hora de inicio / Hora de fin | time (`HH:MM:SS`) | ver "Franja horaria" más abajo |
 
-## Preparar
+Changing any of the `number`/`time` entities, or the manual switch, updates the running firmware immediately **and persists across reboots** where noted (stored in LittleFS via `src/config_store.cpp`) — the device re-publishes its actual (possibly clamped) value back to HA right after applying it, and again on every boot/reconnect, so HA never shows a stale value.
 
-Librerias DHT
-https://github.com/adafruit/Adafruit_Sensor
-https://github.com/adafruit/DHT-sensor-library
+### Sincronización horaria (NTP)
 
-Descomprimir DHT_lib.zip en la carpeta libraries de arduino.
+El dispositivo sincroniza su reloj por NTP (zona horaria `Europe/Madrid` por defecto, override con el build flag `TIME_TZ`) y se resincroniza automáticamente cada 60 minutos mientras haya WiFi. **Si la primera sincronización falla** (sin WiFi, servidor NTP inalcanzable, etc.) el dispositivo sigue funcionando exactamente igual que sin esta función — control 24h, franja horaria ignorada — y la entidad *Última ejecución* se queda en `unknown`. Una vez lograda la primera sincronización, fallos de resincronización posteriores no afectan al funcionamiento: el reloj sigue avanzando por sí solo.
 
-## Componentes
+### Disparo manual
 
-- Arduino Uno
-- Sensor de humedad/temperatura DHT 11.
-- Sensor de luminosidad LDR
-- Relé xx?
+El switch *Disparo manual* abre la válvula durante `valve_active_s` segundos y **se apaga solo** en HA al terminar — no hace falta apagarlo a mano (aunque hacerlo cierra la válvula antes de tiempo). Tiene prioridad sobre cualquier otra lógica, incluido un fallo de lectura del sensor: funciona siempre que se solicite.
 
-## Esquema
+### Franja horaria
 
-//TODO
+*Hora de inicio* y *Hora de fin* delimitan cuándo puede actuar el control **automático** (el disparo manual no se ve afectado). Si ambas coinciden, la franja está deshabilitada y el sistema funciona las 24h — igual que si nunca se hubiera configurado. Una franja donde la hora de inicio es posterior a la de fin (p.ej. 20:00–06:00) se interpreta como un cruce de medianoche: "desde las 20:00 hasta las 06:00 del día siguiente". Sin sincronización NTP la franja se ignora por completo (ver arriba).
 
-## Cheatsheet
+## OTA updates
 
-- A0: Sensor Luminosidad
-- 11: Sensor humedad/temperatura
-- 9: Led de error de lectura de humedad/temperatura
-- 10: Led de error de lectura de luminosidad
-- 12: Control (in) relé (Activo en baja)
-- 13: Led informativo (Activo en alta)
+OTA is a special mode that overrides everything else — entering it disconnects MQTT (publishing `"offline"` first) and force-closes the valve. To flash new firmware over the air:
 
-- 2: On/Off sensor luminosidad (Activo en alta)
-- 3: On/Off sensor humedad/temperatura (Activo en alta)
+1. Power-cycle the board 3 times within 10 seconds (unplug/replug, or reset button if wired).
+2. The board reuses its WiFi connection if it's already up (normal operation keeps WiFi on for MQTT), or connects to `WIFI_SSID` otherwise (15 s timeout, falls back to AP `Nebulizador-OTA-<chipid>` if it can't).
+3. Browse to `http://<ip>/update` and upload the new `firmware.bin`, authenticating with user `admin` and your `OTA_AP_PASSWORD`.
+4. OTA mode is a dead end — sensors/valve/MQTT stay off, and it stays in OTA mode until reflashed or power-cycled again. The device shows as "unavailable" in Home Assistant for the duration.
 
-- 4: 5 segundos en funcionamiento
-- 5: 10 segundos en funcionamiento
-- 6: 15 segundos en funcionamiento
-- 7: 30 segundos en funcionamiento
-- 8: 60 segundos en funcionamiento
+## LED de estado
+
+El LED integrado (`LED_BUILTIN`) es el único indicador visual. Cuando varias situaciones coinciden, manda la de mayor prioridad (de arriba a abajo en la tabla):
+
+| Situación | Patrón |
+|---|---|
+| Modo OTA | parpadeo rápido continuo (100ms) |
+| Válvula abierta (bombeando) | encendido fijo |
+| Error activo | ráfaga de N parpadeos cada ~5s, N según el código de error (ver tabla) |
+| Funcionamiento normal (sin errores) | 1 parpadeo cada ~5s (heartbeat) |
+| Arranque | 3 parpadeos rápidos (150ms), una vez, antes de lo anterior |
+
+| Código de error | Nº de parpadeos | Causa |
+|---|---|---|
+| `ErrorFlags::SENSOR` | 2 | Fallo de lectura del sensor ambiente (DHT11 o SHT30, según el entorno compilado) |
+
+Nuevos errores se añaden como bits adicionales en [include/errors.h](include/errors.h); el número de parpadeos se deriva automáticamente del bit más bajo activo (bit N → N+2 parpadeos), sin tocar `task_led`.
 
 ## A tener en cuenta
 
-- Si se desactiva el sensor de humedad/temperatura el sistema funcionará como un temporizador normal, activándose cada 4 minutos.
-- Si se desactiva el sensor de luminosidad no se tendrá en cuenta este parámetro. El sistema funcionará como si siempre hubiese suficiente luz.
-- El sensor de luminosidad ofrece valores entre 0 y 1023. Los valores son más altos mientras más luz haya.
-- Cuando se habla de temperatura a la hora de elegir el modo de funcionamiento en realidad nos referimos a sensación térmica. La sensación térmica se calcula en base a la temperatura y la humedad relativa y no tiene por qué coincidir con la primera, pudiendo ser inferior o superior a ésta.
+- La sensación térmica (heat index) se calcula a partir de la temperatura y la humedad relativa, y puede ser distinta de la temperatura medida.
+- Si la lectura del sensor ambiente falla (NaN), el sistema apaga la válvula si estaba activa, no opera y reintenta en el siguiente ciclo (250ms), quedando a la espera de una lectura válida (y el LED pasa a parpadear el código de error correspondiente).
 
 ## Funcionamiento
 
-Al conectar el sistema el LED informativo parpadeará 5 veces rápidamente si todo ha ido correctamente.
-Durante las lecturas de parámetros se iluminarán los leds de error MÁS el de funcionamiento
+- Cada 250ms el `loop()` principal llama a los "tasks" de sensores, válvula, MQTT, LED, OTA y hora (NTP) — ver [CLAUDE.md](CLAUDE.md) para el detalle de cada módulo.
+- Si la sensación térmica (`hIndex`) es inferior al umbral mínimo (29.8°C por defecto, configurable desde Home Assistant), la válvula permanece cerrada y el sistema revisa de nuevo cada `max_frequency_min` (30min por defecto).
+- Si `hIndex` alcanza o supera el umbral, la válvula se abre `valve_active_s` segundos (5s por defecto) y el intervalo hasta la siguiente comprobación se calcula proporcionalmente entre `min_frequency_min` y `max_frequency_min` (5–30min por defecto) mediante una curva ease-out: cuanto más calor, más frecuente la nebulización.
 
-### Casos de error
-
-- Si la lectura de humedad/temperatura devuelve NaN (not a number) O la lectura de luminosidad devuelve un valor inferior a 0 o superior a 1024
-  - El sistema entra en modo de error de sensores, ilumina el led de error correspondiente (SIN el de funcionamiento), no opera e intenta una nueva lectura en 10min.
-
-### Casos especiales
-
-- Si el sensor de humedad/temperatura está desactivado
-  - El sistema funciona en modo temporizador, activándose cada 3 minutos
-- Si el sensor de luminosidad está desactivado
-  - El sistema funcionará como si estuviese a plena luz del día
-- Si no hay luz y la temperatura está entre 36º y 38º
-  - El sistema se activa y luego se pone en reposo durante 45min
-- Si no hay luz y la temperatura es superior a 38º
-  - El sistema se activa y luego se pone en reposo durante 35min
-- Si no hay luz, la temperatura está entre 36º y 38º y la humedad relativa es alta
-  - El sistema se activa y luego se pone en reposo durante 90min
-- Si no hay luz, la temperatura es superior a 38º y la humedad relativa es alta
-  - El sistema se activa y luego se pone en reposo durante 60min
-- Si no hay luz y la temperatura no está en ninguno de los rangos descritos anteriormente
-  - El sistema no opera y se pone en reposo durante 30min
-
-### Casos estándar
-
-Los casos estándar se dan cuando los sensores están activos, ofrecen lecturas no erróneas y la luminosidad es suficientemente alta. En estos casos el sistema actuará en base a las lecturas de humedad/temperatura.
-
-- Temperatura inferior a 28º
-  - El sistema no opera y se pone en reposo durante 30min
-- Temperatura entre 28º y 30º
-  - El sistema se activa y se pone en reposo durante 10min
-- Temperatura entre 30º y 32º
-  - El sistema se activa y se pone en reposo durante 4min
-- Temperatura entre 32º y 34º
-  - El sistema se activa y se pone en reposo durante 3min
-- Temperatura entre 34º y 36º
-  - El sistema se activa y se pone en reposo durante 75s
-- Temperatura entre 36º y 38º
-  - El sistema se activa y se pone en reposo durante 60s
-- Temperatura entre 38º y 40º
-  - El sistema se activa y se pone en reposo durante 40s
-- Temperatura entre 40º y 42º
-  - El sistema se activa y se pone en reposo durante 30s
-- Temperatura superior a 42º
-  - El sistema se activa y se pone en reposo durante 30s
+## Future Enhancements
+- Implement additional sensors for more precise control.
+- Integrate data logging for monitoring environmental conditions over time.
