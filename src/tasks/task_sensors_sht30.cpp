@@ -7,6 +7,20 @@
 #include "heat_index.h"
 #include "pins.h"
 
+// The SHT30 shield's factory I2C pins (SCL=D1, SDA=D2) and the Relay Shield's
+// factory control pin (SOLENOID_PIN=D1) collide on D1 — unlike the DHT/LED
+// case this isn't probabilistic: task_valve.cpp drives SOLENOID_PIN directly
+// with digitalWrite(), so if it aliased SCL_PIN/SDA_PIN, every valve toggle
+// would corrupt the I2C bus for as long as the valve stays open. pins.h's
+// bare SCL_PIN default is the shield's factory pin kept for documentation;
+// building requires overriding SCL_PIN (platformio.ini moves it to D6).
+static_assert(SCL_PIN != SOLENOID_PIN, "SCL_PIN collides with SOLENOID_PIN (both D1 by factory default): toggling "
+                                       "the valve would corrupt the I2C clock line. Override SCL_PIN (or "
+                                       "SOLENOID_PIN) in platformio.ini build_flags.");
+static_assert(SDA_PIN != SOLENOID_PIN, "SDA_PIN collides with SOLENOID_PIN: toggling the valve would corrupt the "
+                                       "I2C data line. Override SDA_PIN (or SOLENOID_PIN) in platformio.ini "
+                                       "build_flags.");
+
 namespace {
 // 0x45 is the Wemos SHT30 Shield's factory default (address jumper open);
 // shorting the jumper switches it to 0x44 (the SHT31 library's own default).

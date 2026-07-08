@@ -34,7 +34,6 @@ void ledTaskSetValveActive(bool active) {
     return;
   s_valveActive = active;
 
-  pinMode(LED_BUILTIN, OUTPUT); // See the reclaim note in ledTaskLoop() below.
   if (active) {
     s_ledOn = true;
     digitalWrite(LED_BUILTIN, LOW);
@@ -48,14 +47,6 @@ void ledTaskSetValveActive(bool active) {
 }
 
 void ledTaskLoop(unsigned long now) {
-  // Reclaim the pin every tick. When DHTPIN shares this GPIO (D4, the default
-  // in pins.h), the DHT library leaves it in INPUT_PULLUP after every read and
-  // never restores OUTPUT — and ESP8266's digitalWrite() only touches the
-  // output-set/clear registers, never the direction register, so it silently
-  // no-ops on a pin that isn't in OUTPUT mode. Without this, the LED would
-  // freeze at whatever state it was in right before the first DHT11 read.
-  pinMode(LED_BUILTIN, OUTPUT);
-
   if (s_otaMode) {
     if (now - s_lastToggle >= OTA_BLINK_MS) {
       s_lastToggle = now;

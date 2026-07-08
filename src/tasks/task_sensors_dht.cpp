@@ -6,6 +6,16 @@
 #include "heat_index.h"
 #include "pins.h"
 
+// The DHT11 hardware-interprets any >18ms LOW on its data line as a read
+// start signal, so sharing its pin with the (active-low, blinking) built-in
+// LED causes phantom reads and bus contention — the same reason ESPHome
+// refuses "pin used in multiple places". pins.h's bare DHTPIN default is the
+// shield's factory pin (D4 == LED_BUILTIN) kept for documentation; building
+// requires rewiring the sensor and overriding DHTPIN in platformio.ini.
+static_assert(DHTPIN != LED_BUILTIN, "DHTPIN collides with LED_BUILTIN (GPIO2/D4): the DHT11 would treat every LED "
+                                     "blink as a read start signal. Rewire the sensor and override DHTPIN in "
+                                     "platformio.ini build_flags.");
+
 namespace {
 constexpr int DHT_TYPE = DHT11;
 DHT s_dht(DHTPIN, DHT_TYPE);

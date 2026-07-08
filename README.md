@@ -33,12 +33,12 @@ Both sensor reads are non-blocking. The SHT30 backend uses the `robtillaart/SHT3
 
 | Role | Pin | Notes |
 |---|---|---|
-| DHT11 data | `D4` (default) | `env:d1_mini_dht11` only. **Shares GPIO2 with the status LED** — see note below |
+| DHT11 data | `D5` | `env:d1_mini_dht11` only. **Physically rewired off the shield's factory `D4`** — see note below |
 | SHT30 SDA / SCL | `D2` / `D6` (default) | `env:d1_mini_sht30` only. Configurable, see below |
 | Solenoid valve control | `D1` (default) | Configurable, see below. Active-high (`HIGH` = valve open) |
 | Status LED | `LED_BUILTIN` (`D4` / GPIO2) | Fixed by the board, active-low |
 
-These are the real, confirmed pins for this project's actual shields — DHT11 → `D4`, SHT30 → SCL `D1`/SDA `D2` (Wemos' own SHT30 Shield default), Relay → `D1` (Wemos' own Relay Shield default). [platformio.ini](platformio.ini) still moves `SCL` to `D6` for the SHT30 build, since `SCL=D1` would otherwise collide with `SOLENOID_PIN=D1` (you can't stack the Relay Shield with an I2C shield on their factory pins). `DHTPIN=D4` is **not** moved, since that's genuinely where the DHT11 is wired — see below for what that costs. Override any of these the same way if you wire it differently:
+The shields' factory pins are DHT11 → `D4`, SHT30 → SCL `D1`/SDA `D2` (Wemos' own SHT30 Shield default), Relay → `D1` (Wemos' own Relay Shield default), and [include/pins.h](include/pins.h) documents them as its bare fallbacks. [platformio.ini](platformio.ini) then resolves the two collisions those factory pins carry: `SCL` moves to `D6` for the SHT30 build (`SCL=D1` would collide with `SOLENOID_PIN=D1`), and `DHTPIN` moves to `D5` (see below). Override any of these the same way if you wire it differently:
 
 ```ini
 build_flags =
@@ -46,12 +46,12 @@ build_flags =
     -D SOLENOID_PIN=D2
 ```
 
-**DHT11 + built-in LED sharing GPIO2**: the DHT library leaves the pin in a mode that would otherwise make the status LED freeze after the first sensor read — `task_led.cpp` reclaims the pin every tick to prevent that (see [CLAUDE.md](CLAUDE.md) for the full trace). What this means in practice: the LED still works correctly, but flickers briefly (a few ms) every time the DHT11 is read (every 5–30 min). This is expected, not a bug.
+**Why the DHT11 can't stay on its factory `D4`**: that pin is also the built-in status LED (GPIO2, active-low), and the DHT11 hardware-interprets any ≥18ms LOW on its data line as a "start reading" signal — so every LED blink (heartbeat, error codes, valve indicator, OTA) would trigger a phantom sensor read and fight the sensor electrically on the line. There is no software workaround (any visible blink is a valid start signal; ESPHome outright refuses to compile this pin sharing). The fix, as in the community references collected in [CLAUDE.md](CLAUDE.md), is physical: the shield's data line is rewired to `D5`, and a compile-time guard (`static_assert` in `task_sensors_dht.cpp`) rejects any build where `DHTPIN` lands back on the LED pin.
 
 ## Setup Instructions
 
 1. **Hardware Connections**:
-   - DHT11: connect the data pin to `D4` (or your configured `DHTPIN`).
+   - DHT11: connect the data pin to `D5` (or your configured `DHTPIN` — never `D4`/the LED pin, the build will refuse it).
    - SHT30: connect SDA/SCL to `D2`/`D6` (or your configured `SDA_PIN`/`SCL_PIN`).
    - Wire the solenoid valve to the MOSFET module, and the module's trigger input to `D1` (or your configured `SOLENOID_PIN`).
 2. **WiFi/OTA/MQTT credentials**: create `include/config.h` (not committed, see `include/.gitignore`):
